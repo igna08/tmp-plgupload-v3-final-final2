@@ -20,7 +20,8 @@
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* Default background and text colors will be applied via Tailwind utilities
+     on the body/html tag in layout.tsx, using the Shopify theme.
+     Font family is also handled by Tailwind's base styles (via font-sans)
+     and the layout.tsx variable setup. */
 }
