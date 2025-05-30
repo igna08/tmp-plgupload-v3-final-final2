@@ -42,19 +42,25 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true); // Initialize isLoading to true
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
-    // Try to load token from localStorage on initial load
+    setIsLoading(true); // Set loading true at the very start of auth initialization
     const storedToken = localStorage.getItem('accessToken');
     if (storedToken) {
       setToken(storedToken);
       axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
-      fetchUser(); // Fetch user if token exists
+      fetchUser(); // fetchUser will set isLoading to false once it's done
+    } else {
+      // No token found, ensure state is clean and finish loading
+      setToken(null);
+      setUser(null);
+      delete axios.defaults.headers.common['Authorization']; // Ensure header is clear
+      setIsLoading(false); // Crucial: set loading to false if no token to check
     }
-  }, []);
+  }, []); // Empty dependency array means this runs once on mount
 
   const login = async (email_or_username: string, password_param: string): Promise<boolean> => {
     setIsLoading(true);
