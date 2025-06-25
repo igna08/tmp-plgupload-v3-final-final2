@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 
@@ -8,62 +8,87 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
+const PUBLIC_ROUTES = ['/auth/register/invitation']; // Podés agregar más rutas públicas aquí
+
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { token, user, isLoading, fetchUser } = useAuth(); // Assuming fetchUser might be needed if token exists but user doesn't
+  const { token, user, isLoading } = useAuth();
   const router = useRouter();
-  const pathname = usePathname(); // Get current path
+  const pathname = usePathname();
+  const [shouldRedirect, setShouldRedirect] = useState(false);
+
+  // Verifica si es una ruta pública
+  const isPublicRoute = PUBLIC_ROUTES.some((route) => pathname?.startsWith(route));
+
+  const debugLog = (message: string, data?: any) => {
+    console.log(`[ProtectedRoute] ${message}`, data || '');
+  };
 
   useEffect(() => {
-    // If still loading auth state, wait.
-    if (isLoading) {
-      return;
-    }
+    debugLog('State changed', {
+      pathname,
+      hasToken: !!token,
+      hasUser: !!user,
+      isLoading,
+      shouldRedirect,
+    });
 
-    // If not loading and no token (implies no user), redirect to login.
-    // Preserve the intended path for redirection after login.
-    if (!token) {
-      console.log('ProtectedRoute: No token, redirecting to login. Current path:', pathname);
-      router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
-    } else if (token && !user) {
-      // If there's a token but no user object, try to fetch the user.
-      // This can happen on initial load if token is from localStorage.
-      // AuthContext's useEffect might already handle this, but an explicit call can be a safeguard.
-      console.log('ProtectedRoute: Token exists, but no user object. Attempting to fetch user.');
-      fetchUser().catch(err => {
-        // If fetchUser fails (e.g. token invalid), AuthContext's fetchUser should ideally logout.
-        // If not, we might need to redirect here too.
-        console.error("ProtectedRoute: fetchUser failed, potential need for redirect to login", err);
-        // router.replace(`/login?redirect=${encodeURIComponent(pathname)}`); // Consider this if fetchUser doesn't trigger logout on failure
-      });
+    if (!isLoading && !isPublicRoute) {
+      if (!token) {
+        debugLog('No token found, should redirect to login');
+        setShouldRedirect(true);
+        const redirectUrl = `/login?redirect=${encodeURIComponent(pathname)}`;
+        debugLog('Redirecting to', redirectUrl);
+        router.replace(redirectUrl);
+      } else {
+        debugLog('Token exists, access granted');
+        setShouldRedirect(false);
+      }
     }
-    // If token and user are present, or if token exists and user is being fetched, allow rendering.
-    // The main check is !token for redirection. If user fetch fails, AuthContext should clear token.
-
-  }, [token, user, isLoading, router, pathname, fetchUser]);
+  }, [token, isLoading, pathname, router, isPublicRoute]);
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-neutralLighter">
-        <p className="text-lg text-neutralDark">Loading authentication status...</p>
-        {/* Optionally, add a spinner here */}
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-lg text-neutralDark">Loading authentication...</p>
+          <p className="text-sm text-neutralTextSecondary mt-2">
+            Token: {token ? 'Present' : 'None'} | User: {user ? 'Loaded' : 'None'}
+          </p>
+        </div>
       </div>
     );
   }
 
-  // If there's no token and we've passed the useEffect (which should have redirected),
-  // it might mean the redirect is in progress or there's a slight delay.
-  // Rendering null or a minimal loader here can prevent flashing content before redirect.
-  if (!token) {
+  if (!token && !isPublicRoute) {
     return (
-        <div className="flex items-center justify-center h-screen bg-neutralLighter">
-            <p className="text-lg text-neutralDark">Redirecting to login...</p>
+      <div className="flex items-center justify-center h-screen bg-neutralLighter">
+        <div className="text-center">
+          <div className="animate-pulse rounded-full h-12 w-12 bg-gray-300 mx-auto mb-4"></div>
+          <p className="text-lg text-neutralDark">Redirecting to login...</p>
+          <p className="text-sm text-neutralTextSecondary mt-2">
+            No authentication token found
+          </p>
         </div>
+      </div>
     );
   }
 
-  // If token exists and user is loaded (or being loaded, as isLoading is false now), render children.
-  // If user is null but token exists, fetchUser was called; AuthContext will update user.
-  // It's assumed that if fetchUser fails, AuthContext will clear the token, triggering a re-render and redirect.
+  if (token && !user && !isPublicRoute) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-neutralLighter">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
+          <p className="text-lg text-neutralDark">Loading user data...</p>
+          <p className="text-sm text-neutralTextSecondary mt-2">
+            Authentication verified, fetching profile...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  debugLog('Rendering protected content');
   return <>{children}</>;
 };
 

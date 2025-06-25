@@ -1,3 +1,4 @@
+// Textarea Component
 import React from 'react';
 
 interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
@@ -8,27 +9,31 @@ const Textarea: React.FC<TextareaProps> = ({
   className,
   disabled,
   hasError,
-  rows = 4, // Default rows
+  rows = 4,
   ...props
 }) => {
   const baseStyles = `
-    w-full px-3 py-2 bg-white text-neutralDark
-    border rounded-radiusSmall shadow-sm
-    placeholder-neutralTextSecondary
-    focus:outline-none focus:ring-2 focus:ring-opacity-50
-    transition-colors duration-150 ease-in-out
+    block w-full px-3 py-2 border rounded-lg shadow-sm 
+    placeholder-gray-400 focus:outline-none focus:ring-2 
+    focus:ring-blue-500 focus:border-blue-500 sm:text-sm 
+    transition-colors resize-none
   `;
 
-  const normalStateStyles = "border-neutralMedium focus:border-shopifyGreen focus:ring-shopifyGreen";
-  const errorStateStyles = "border-accentRed focus:border-accentRed focus:ring-accentRed";
-  const disabledStateStyles = "bg-neutralLighter border-neutralLight text-neutralTextSecondary cursor-not-allowed";
+  const stateStyles = hasError
+    ? 'border-red-300 text-red-900 placeholder-red-300 focus:ring-red-500 focus:border-red-500'
+    : 'border-gray-300 hover:border-gray-400';
+
+  const disabledStyles = disabled
+    ? 'bg-gray-50 cursor-not-allowed'
+    : 'bg-white';
 
   return (
     <textarea
       rows={rows}
       className={`
         ${baseStyles}
-        ${disabled ? disabledStateStyles : (hasError ? errorStateStyles : normalStateStyles)}
+        ${stateStyles}
+        ${disabledStyles}
         ${className || ''}
       `}
       disabled={disabled}
@@ -38,3 +43,4 @@ const Textarea: React.FC<TextareaProps> = ({
 };
 
 export default Textarea;
+

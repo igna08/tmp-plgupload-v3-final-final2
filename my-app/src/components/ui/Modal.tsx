@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { X } from 'lucide-react';
 
 interface ModalProps {
   isOpen: boolean;
@@ -6,7 +7,7 @@ interface ModalProps {
   title?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  size?: 'small' | 'medium' | 'large' | 'xlarge'; // Based on typical modal sizes
+  size?: 'small' | 'medium' | 'large' | 'xlarge';
 }
 
 const Modal: React.FC<ModalProps> = ({
@@ -23,10 +24,12 @@ const Modal: React.FC<ModalProps> = ({
         onClose();
       }
     };
+
     if (isOpen) {
       document.addEventListener('keydown', handleEscape);
-      document.body.style.overflow = 'hidden'; // Prevent background scrolling
+      document.body.style.overflow = 'hidden';
     }
+
     return () => {
       document.removeEventListener('keydown', handleEscape);
       document.body.style.overflow = '';
@@ -38,67 +41,69 @@ const Modal: React.FC<ModalProps> = ({
   }
 
   const sizeClasses = {
-    small: 'sm:max-w-sm', // e.g. 384px
-    medium: 'sm:max-w-md', // e.g. 512px (Shopify modals often around this width)
-    large: 'sm:max-w-lg',  // e.g. 576px or wider
-    xlarge: 'sm:max-w-xl', // e.g. 672px
+    small: 'sm:max-w-sm',
+    medium: 'sm:max-w-md',
+    large: 'sm:max-w-lg',
+    xlarge: 'sm:max-w-xl',
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overflow-x-hidden transition-opacity duration-300 ease-in-out"
-      aria-labelledby="modal-title"
-      role="dialog"
-      aria-modal="true"
-    >
+    <div className="fixed inset-0 z-50 overflow-y-auto">
       {/* Overlay */}
-      <div
-        className="fixed inset-0 bg-neutralDarker bg-opacity-60 transition-opacity"
+      <div 
+        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
         onClick={onClose}
         aria-hidden="true"
-      ></div>
+      />
+      
+      {/* Dialog Container */}
+      <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
+        <div 
+          className={`relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full ${sizeClasses[size]}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          {title && (
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {title}
+              </h3>
+              <button
+                type="button"
+                className="rounded-lg p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+                onClick={onClose}
+              >
+                <span className="sr-only">Cerrar</span>
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          )}
 
-      {/* Dialog */}
-      <div
-        className={`relative mx-auto my-8 w-full p-4 bg-white rounded-radiusLarge shadow-xl
-                    transform transition-all duration-300 ease-in-out
-                    flex flex-col
-                    ${sizeClasses[size]}
-                    max-h-[calc(100vh-4rem)]`} // Ensure modal doesn't exceed viewport height
-      >
-        {/* Header */}
-        {title && (
-          <div className="flex items-start justify-between p-4 border-b border-neutralLight rounded-t-radiusLarge">
-            <h3 className="text-lg font-semibold text-neutralDark" id="modal-title">
-              {title}
-            </h3>
-            <button
-              type="button"
-              className="p-1 text-neutralTextSecondary hover:text-neutralDark transition-colors"
-              onClick={onClose}
-              aria-label="Close modal"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+          {/* Content */}
+          <div className={title ? '' : 'relative'}>
+            {/* Close button when no title */}
+            {!title && (
+              <div className="absolute right-4 top-4 z-10">
+                <button
+                  type="button"
+                  className="rounded-lg p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+                  onClick={onClose}
+                >
+                  <span className="sr-only">Cerrar</span>
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            )}
+            {children}
           </div>
-        )}
 
-        {/* Content */}
-        <div className="p-4 md:p-5 flex-grow overflow-y-auto">
-          {children}
+          {/* Footer */}
+          {footer && footer}
         </div>
-
-        {/* Footer */}
-        {footer && (
-          <div className="flex items-center justify-end p-4 space-x-3 border-t border-neutralLight rounded-b-radiusLarge">
-            {footer}
-          </div>
-        )}
       </div>
     </div>
   );
 };
 
 export default Modal;
+

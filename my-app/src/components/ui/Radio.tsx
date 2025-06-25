@@ -1,8 +1,10 @@
+
+
+// Radio Component
 import React from 'react';
 
 interface RadioProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
-  // 'name', 'value', 'checked', 'onChange' are part of InputHTMLAttributes
 }
 
 const Radio: React.FC<RadioProps> = ({
@@ -10,15 +12,15 @@ const Radio: React.FC<RadioProps> = ({
   label,
   checked,
   disabled,
-  id, // Ensure id is passed for label association
+  id,
   name,
   value,
   ...props
 }) => {
-  const radioId = id || `radio-${React.useId()}`; // Generate id if not provided
+  const radioId = id || `radio-${React.useId()}`;
 
   return (
-    <div className={`flex items-center ${className || ''} ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+    <div className={`flex items-center ${className || ''}`}>
       <input
         type="radio"
         id={radioId}
@@ -27,21 +29,22 @@ const Radio: React.FC<RadioProps> = ({
         checked={checked}
         disabled={disabled}
         className={`
-          h-4 w-4 rounded-full border-neutralMedium text-shopifyGreen shadow-sm
-          focus:ring-2 focus:ring-shopifyGreen focus:ring-opacity-50 focus:ring-offset-0
-          disabled:bg-neutralLight disabled:border-neutralLight disabled:cursor-not-allowed
-          transition-colors duration-150 ease-in-out
-          ${checked && !disabled ? 'bg-shopifyGreen border-shopifyGreen' : 'bg-white'}
+          h-4 w-4 text-blue-600 border-gray-300 shadow-sm
+          focus:ring-2 focus:ring-blue-500 focus:ring-offset-0
+          disabled:bg-gray-100 disabled:border-gray-300 
+          disabled:cursor-not-allowed transition-colors
+          ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}
         `}
-        // Tailwind's default radio is a blue color. To make it green, you might need a custom form plugin or more specific styling if text-shopifyGreen doesn't override the check mark color.
-        // For a simple green dot, some custom CSS might be needed if text-color doesn't apply to the inner dot for all browsers.
-        // The current approach relies on text-shopifyGreen to color the check/dot.
         {...props}
       />
       {label && (
         <label
           htmlFor={radioId}
-          className={`ml-2 text-sm ${disabled ? 'text-neutralTextSecondary' : 'text-neutralDark'}`}
+          className={`ml-2 text-sm transition-colors ${
+            disabled 
+              ? 'text-gray-400 cursor-not-allowed' 
+              : 'text-gray-700 cursor-pointer hover:text-gray-900'
+          }`}
         >
           {label}
         </label>
