@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, FormEvent, useEffect } from 'react';
+import React, { useState, FormEvent, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import Input from '@/components/ui/Input';
@@ -16,7 +16,8 @@ import {
   GraduationCap
 } from 'lucide-react';
 
-const LoginPage: React.FC = () => {
+// Component that uses useSearchParams wrapped in Suspense
+const LoginForm: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -199,6 +200,25 @@ const LoginPage: React.FC = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+// Loading component for Suspense fallback
+const LoginLoadingFallback: React.FC = () => (
+  <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+    <div className="text-center">
+      <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
+      <p className="text-gray-600">Cargando...</p>
+    </div>
+  </div>
+);
+
+// Main component with Suspense boundary
+const LoginPage: React.FC = () => {
+  return (
+    <Suspense fallback={<LoginLoadingFallback />}>
+      <LoginForm />
+    </Suspense>
   );
 };
 
