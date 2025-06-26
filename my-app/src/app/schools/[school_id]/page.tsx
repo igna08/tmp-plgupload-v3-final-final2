@@ -76,10 +76,14 @@ const EyeIcon = ({ className }: { className?: string }) => (
 
 const API_BASE_URL = 'http://localhost:8000/api';
 
-// Note: The App Router passes params directly to the page component
-const SchoolDetailPage = ({ params }: { params: { school_id: string } }) => {
+// Updated Props interface for async params
+type Props = {
+  params: Promise<{ school_id: string }>
+}
+
+const SchoolDetailPage = ({ params }: Props) => {
   const router = useRouter();
-  const school_id = params.school_id;
+  const [school_id, setSchoolId] = useState<string>("");
 
   const [school, setSchool] = useState<School | null>(null);
   const [isLoading, setIsLoading] = useState(true); // For school details
@@ -95,6 +99,15 @@ const SchoolDetailPage = ({ params }: { params: { school_id: string } }) => {
   const [isCreateClassroomModalOpen, setIsCreateClassroomModalOpen] = useState(false); // Modal state
 
   const totalClassroomPages = Math.ceil(totalClassrooms / classroomsLimit);
+
+  // Resolve params on mount
+  useEffect(() => {
+    const resolveParams = async () => {
+      const resolvedParams = await params;
+      setSchoolId(resolvedParams.school_id);
+    };
+    resolveParams();
+  }, [params]);
 
   const fetchSchoolDetails = useCallback(async (id: string) => {
     if (!id) {
@@ -146,7 +159,7 @@ const SchoolDetailPage = ({ params }: { params: { school_id: string } }) => {
 
   useEffect(() => {
     if (school_id) {
-      fetchSchoolDetails(school_id as string);
+      fetchSchoolDetails(school_id);
     }
   }, [school_id, fetchSchoolDetails]);
 
@@ -191,7 +204,7 @@ const SchoolDetailPage = ({ params }: { params: { school_id: string } }) => {
   };
 
   // Render logic for school details
-  if (isLoading) { // Initial loading for school details
+  if (isLoading || !school_id) { // Initial loading for school details
     return (
       <div className="p-6 text-center">
         <p className="text-lg text-neutralTextSecondary">Loading school details...</p>
