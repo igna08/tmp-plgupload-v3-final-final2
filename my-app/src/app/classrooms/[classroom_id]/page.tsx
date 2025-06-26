@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal'; // Import base Modal for confirmation
 import Link from 'next/link'; // For linking back to school
 import EditClassroomModal from '@/components/classrooms/EditClassroomModal'; // Import the modal
+import { FC } from "react";
 
 // Define the Classroom interface (reuse or define if not globally available)
 interface Classroom {
@@ -54,8 +55,12 @@ const ExclamationTriangleIcon = ({ className }: { className?: string }) => (
 );
 
 const API_BASE_URL = 'http://localhost:8000/api';
-
-const ClassroomDetailPage = ({ params }: { params: { classroom_id: string } }) => {
+interface PageProps {
+  params: {
+    classroom_id: string;
+  };
+}
+const ClassroomDetailPage: FC<PageProps> = ({ params }) => {
   const router = useRouter();
   const classroom_id = params.classroom_id;
 
