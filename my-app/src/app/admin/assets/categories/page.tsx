@@ -13,7 +13,6 @@ import {
   Trash2,
   FolderOpen,
   Search,
-  Filter,
   MoreHorizontal,
   AlertCircle,
   Loader2,
