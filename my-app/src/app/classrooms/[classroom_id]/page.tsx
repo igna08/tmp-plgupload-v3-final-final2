@@ -55,13 +55,15 @@ const ExclamationTriangleIcon = ({ className }: { className?: string }) => (
 );
 
 const API_BASE_URL = 'http://localhost:8000/api';
+
+// Updated Props interface for async params
 type Props = {
-  params: { classroom_id: string }
+  params: Promise<{ classroom_id: string }>
 }
+
 const ClassroomDetailPage = ({ params }: Props) => {
   const router = useRouter();
-  const classroom_id = params.classroom_id;
-
+  const [classroom_id, setClassroomId] = useState<string>("");
   const [classroom, setClassroom] = useState<Classroom | null>(null);
   const [school, setSchool] = useState<SchoolStub | null>(null); // For displaying school name
   const [isLoading, setIsLoading] = useState(true);
@@ -71,6 +73,14 @@ const ClassroomDetailPage = ({ params }: Props) => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false); // State for delete modal
   const [isDeleting, setIsDeleting] = useState(false); // Loading state for delete operation
 
+  // Resolve params on mount
+  useEffect(() => {
+    const resolveParams = async () => {
+      const resolvedParams = await params;
+      setClassroomId(resolvedParams.classroom_id);
+    };
+    resolveParams();
+  }, [params]);
 
   const fetchClassroomDetails = useCallback(async (id: string) => {
     if (!id) {
@@ -112,9 +122,10 @@ const ClassroomDetailPage = ({ params }: Props) => {
     }
   }, []);
 
-
   useEffect(() => {
-    fetchClassroomDetails(classroom_id);
+    if (classroom_id) {
+      fetchClassroomDetails(classroom_id);
+    }
   }, [classroom_id, fetchClassroomDetails]); // fetchClassroomDetails is stable due to useCallback
 
   const openEditModal = () => setIsEditModalOpen(true);
@@ -152,8 +163,7 @@ const ClassroomDetailPage = ({ params }: Props) => {
     }
   };
 
-
-  if (isLoading) {
+  if (isLoading || !classroom_id) {
     return (
       <div className="p-6 text-center">
         <p className="text-lg text-neutralTextSecondary">Loading classroom details...</p>
