@@ -1,4 +1,3 @@
-"use client";
 
 import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -55,12 +54,10 @@ const ExclamationTriangleIcon = ({ className }: { className?: string }) => (
 );
 
 const API_BASE_URL = 'http://localhost:8000/api';
-interface PageProps {
-  params: {
-    classroom_id: string;
-  };
+type Props = {
+  params: { classroom_id: string }
 }
-const ClassroomDetailPage: FC<PageProps> = ({ params }) => {
+const ClassroomDetailPage = ({ params }: Props) => {
   const router = useRouter();
   const classroom_id = params.classroom_id;
 
