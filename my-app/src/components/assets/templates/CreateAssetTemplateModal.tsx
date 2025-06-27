@@ -8,7 +8,7 @@ import Textarea from '@/components/ui/Textarea';
 import Button from '@/components/ui/Button';
 import Select from '@/components/ui/Select'; // For category selection
 
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
 
 interface AssetCategory { // For populating the dropdown
   id: string;

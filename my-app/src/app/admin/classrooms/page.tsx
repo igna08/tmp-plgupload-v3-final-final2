@@ -24,7 +24,7 @@ interface Classroom {
   school_id: string;
 }
 
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
 
 const AllClassroomsAdminPage: React.FC = () => {
   const { user, isLoading: isAuthLoading } = useAuth();
