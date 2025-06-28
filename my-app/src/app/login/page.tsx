@@ -19,23 +19,81 @@ import {
 
 const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
 
-// Función de utilidad para logs estructurados
+// Función de debug que funciona en producción
 const debugLog = (category: string, message: string, data?: any) => {
-  const timestamp = new Date().toISOString();
-  const logData = {
-    timestamp,
-    category,
-    message,
-    ...(data && { data })
-  };
-  
-  console.group(`🔍 [LOGIN-DEBUG] ${category}`);
-  console.log(`⏰ ${timestamp}`);
-  console.log(`📝 ${message}`);
+  const timestamp = new Date().toLocaleString();
+  console.log(`🔍 [${category}] ${timestamp} - ${message}`);
   if (data) {
     console.log('📊 Data:', data);
   }
-  console.groupEnd();
+  
+  // También mostrar en alert para Vercel si está en modo debug
+  if (typeof window !== 'undefined' && window.localStorage?.getItem('debug-mode') === 'true') {
+    const debugMsg = `[${category}] ${message}${data ? '\nData: ' + JSON.stringify(data, null, 2) : ''}`;
+    console.warn('DEBUG ALERT:', debugMsg);
+  }
+};
+
+// Función de login manual para debug
+const manualLogin = async (email: string, password: string) => {
+  debugLog('MANUAL_LOGIN', 'Iniciando login manual directo', { email, apiUrl: API_BASE_URL });
+  
+  try {
+    const loginUrl = `${API_BASE_URL}/auth/login`;
+    debugLog('REQUEST_PREP', 'Preparando request', { 
+      url: loginUrl,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const requestBody = { email, password };
+    debugLog('REQUEST_BODY', 'Cuerpo del request', requestBody);
+
+    const response = await fetch(loginUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    debugLog('RESPONSE_STATUS', 'Respuesta recibida', {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok,
+      headers: Object.fromEntries(response.headers.entries())
+    });
+
+    let responseData;
+    const contentType = response.headers.get('content-type');
+    
+    if (contentType && contentType.includes('application/json')) {
+      responseData = await response.json();
+      debugLog('RESPONSE_JSON', 'Datos JSON recibidos', responseData);
+    } else {
+      const textData = await response.text();
+      debugLog('RESPONSE_TEXT', 'Respuesta en texto', { text: textData });
+      responseData = { error: 'Respuesta no JSON', data: textData };
+    }
+
+    if (response.ok) {
+      debugLog('LOGIN_SUCCESS', 'Login exitoso', responseData);
+      return { success: true, data: responseData };
+    } else {
+      debugLog('LOGIN_FAILED', 'Login falló', { status: response.status, data: responseData });
+      return { success: false, error: responseData.message || 'Error desconocido', data: responseData };
+    }
+
+  } catch (error) {
+    debugLog('REQUEST_ERROR', 'Error en la petición', {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : 'Unknown'
+    });
+    
+    return { success: false, error: `Error de conexión: ${error instanceof Error ? error.message : String(error)}` };
+  }
 };
 
 // Component that uses useSearchParams wrapped in Suspense
@@ -45,183 +103,145 @@ const LoginForm: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [logoError, setLogoError] = useState(false);
+  const [manualLoading, setManualLoading] = useState(false);
+  const [manualError, setManualError] = useState<string | null>(null);
+  const [debugMode, setDebugMode] = useState(false);
+  
   const { login, isLoading, error: authError, token } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Obtener la URL de redirección de los query params
   const redirectUrl = searchParams.get('redirect') || '/';
 
-  // Debug inicial del componente
+  // Activar modo debug
   useEffect(() => {
-    debugLog('COMPONENT_INIT', 'Componente LoginForm inicializado', {
+    const isDebug = typeof window !== 'undefined' && window.localStorage?.getItem('debug-mode') === 'true';
+    setDebugMode(isDebug);
+    debugLog('COMPONENT_INIT', 'Componente inicializado', {
+      debugMode: isDebug,
       redirectUrl,
-      initialOnlineStatus: navigator.onLine,
       hasToken: !!token,
-      apiBaseUrl: API_BASE_URL
+      apiUrl: API_BASE_URL
     });
   }, []);
 
   // Monitor connection status
   useEffect(() => {
-    debugLog('NETWORK_MONITOR', 'Configurando listeners de conectividad');
-    
     const handleOnline = () => {
-      debugLog('NETWORK_STATUS', 'Conexión restaurada - ONLINE');
+      debugLog('NETWORK', 'Conexión restaurada');
       setIsOnline(true);
     };
     
     const handleOffline = () => {
-      debugLog('NETWORK_STATUS', 'Conexión perdida - OFFLINE');
+      debugLog('NETWORK', 'Conexión perdida');
       setIsOnline(false);
     };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-
-    // Check initial status
-    const initialStatus = navigator.onLine;
-    debugLog('NETWORK_CHECK', 'Estado inicial de conectividad', { isOnline: initialStatus });
-    setIsOnline(initialStatus);
+    setIsOnline(navigator.onLine);
 
     return () => {
-      debugLog('NETWORK_MONITOR', 'Removiendo listeners de conectividad');
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
-  // Si ya está autenticado, redirigir
+  // Redirect if authenticated
   useEffect(() => {
     if (token) {
-      debugLog('AUTH_REDIRECT', 'Usuario ya autenticado, redirigiendo', {
-        token: token.substring(0, 20) + '...',
-        redirectUrl
-      });
+      debugLog('AUTH_REDIRECT', 'Redirigiendo usuario autenticado', { redirectUrl });
       router.replace(redirectUrl);
     }
   }, [token, router, redirectUrl]);
 
-  // Debug cambios en el estado de loading
-  useEffect(() => {
-    debugLog('AUTH_STATE', 'Estado de autenticación cambió', {
-      isLoading,
-      hasError: !!authError,
-      error: authError,
-      hasToken: !!token
-    });
-  }, [isLoading, authError, token]);
-
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     
-    debugLog('FORM_SUBMIT', 'Iniciando proceso de login', {
-      email: email,
+    debugLog('FORM_SUBMIT', 'Formulario enviado', {
+      email,
       passwordLength: password.length,
       isOnline: navigator.onLine,
-      formValid: !!(email && password)
+      hasAuthContext: !!login
     });
 
-    // Check if online before attempting login
+    setManualError(null);
+
     if (!navigator.onLine) {
-      debugLog('NETWORK_ERROR', 'Intento de login sin conexión a internet');
-      alert('No hay conexión a internet. Por favor, verifica tu conexión e inténtalo de nuevo.');
+      debugLog('NETWORK_ERROR', 'Sin conexión a internet');
+      alert('No hay conexión a internet');
       return;
     }
 
-    // Validación de campos
     if (!email || !password) {
-      debugLog('VALIDATION_ERROR', 'Campos requeridos faltantes', {
-        hasEmail: !!email,
-        hasPassword: !!password
-      });
+      debugLog('VALIDATION_ERROR', 'Campos faltantes', { hasEmail: !!email, hasPassword: !!password });
+      setManualError('Email y contraseña son requeridos');
       return;
     }
 
+    // Probar primero el contexto de autenticación
+    debugLog('AUTH_CONTEXT', 'Intentando login con contexto Auth');
     try {
-      debugLog('LOGIN_REQUEST', 'Enviando solicitud de login al backend', {
-        apiUrl: API_BASE_URL,
-        email,
-        timestamp: new Date().toISOString()
-      });
-
-      // Medir tiempo de respuesta
-      const startTime = performance.now();
-      
-      const success = await login(email, password);
-      
-      const endTime = performance.now();
-      const responseTime = endTime - startTime;
-
-      if (success) {
-        debugLog('LOGIN_SUCCESS', 'Login exitoso', {
-          responseTime: `${responseTime.toFixed(2)}ms`,
-          redirectUrl,
-          timestamp: new Date().toISOString()
-        });
+      if (login) {
+        const success = await login(email, password);
+        debugLog('AUTH_CONTEXT_RESULT', 'Resultado del contexto', { success });
         
-        debugLog('NAVIGATION', 'Redirigiendo usuario', { to: redirectUrl });
-        router.push(redirectUrl);
+        if (success) {
+          router.push(redirectUrl);
+          return;
+        }
       } else {
-        debugLog('LOGIN_FAILURE', 'Login falló - credenciales inválidas', {
-          responseTime: `${responseTime.toFixed(2)}ms`,
-          email,
-          timestamp: new Date().toISOString()
-        });
+        debugLog('AUTH_CONTEXT_ERROR', 'Contexto de auth no disponible');
       }
     } catch (error) {
-      debugLog('LOGIN_ERROR', 'Error durante el proceso de login', {
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-        email,
-        timestamp: new Date().toISOString()
-      });
+      debugLog('AUTH_CONTEXT_ERROR', 'Error en contexto auth', { error });
+    }
+
+    // Si el contexto falla, probar login manual
+    debugLog('MANUAL_LOGIN_START', 'Iniciando login manual');
+    setManualLoading(true);
+    
+    try {
+      const result = await manualLogin(email, password);
       
-      // Análisis del tipo de error
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        debugLog('NETWORK_ERROR', 'Error de red detectado', {
-          message: 'Posible problema de conectividad o CORS',
-          apiUrl: API_BASE_URL
-        });
-      } else if (error instanceof Error && error.message.includes('timeout')) {
-        debugLog('TIMEOUT_ERROR', 'Timeout de request detectado');
+      if (result.success) {
+        debugLog('MANUAL_LOGIN_SUCCESS', 'Login manual exitoso');
+        // Aquí podrías guardar el token manualmente si es necesario
+        if (result.data?.token) {
+          localStorage.setItem('authToken', result.data.token);
+        }
+        router.push(redirectUrl);
+      } else {
+        debugLog('MANUAL_LOGIN_FAILED', 'Login manual falló');
+        setManualError(result.error || 'Credenciales incorrectas');
       }
-      
-      console.error('Error completo en login:', error);
+    } catch (error) {
+      debugLog('MANUAL_LOGIN_ERROR', 'Error en login manual', { error });
+      setManualError('Error de conexión con el servidor');
+    } finally {
+      setManualLoading(false);
     }
   };
 
   const togglePasswordVisibility = () => {
-    const newState = !showPassword;
-    debugLog('UI_INTERACTION', 'Toggle visibilidad de contraseña', {
-      previousState: showPassword,
-      newState
-    });
-    setShowPassword(newState);
+    setShowPassword(!showPassword);
   };
 
   const handleLogoError = () => {
-    debugLog('ASSET_ERROR', 'Error cargando logo, usando fallback');
+    debugLog('ASSET_ERROR', 'Error cargando logo');
     setLogoError(true);
   };
 
-  const handleInputChange = (field: 'email' | 'password', value: string) => {
-    debugLog('INPUT_CHANGE', `Campo ${field} modificado`, {
-      field,
-      valueLength: value.length,
-      isEmpty: !value.trim()
-    });
-
-    if (field === 'email') {
-      setEmail(value);
-    } else {
-      setPassword(value);
+  const toggleDebugMode = () => {
+    const newMode = !debugMode;
+    setDebugMode(newMode);
+    if (typeof window !== 'undefined') {
+      window.localStorage?.setItem('debug-mode', newMode.toString());
     }
+    debugLog('DEBUG_MODE', `Modo debug ${newMode ? 'activado' : 'desactivado'}`);
   };
 
-  // Si ya está autenticado, mostrar mensaje de carga
   if (token) {
-    debugLog('RENDER', 'Renderizando estado de redirección');
     return (
       <div className="min-h-screen bg-white flex items-center justify-center px-4">
         <div className="text-center">
@@ -232,16 +252,22 @@ const LoginForm: React.FC = () => {
     );
   }
 
-  debugLog('RENDER', 'Renderizando formulario de login', {
-    isLoading,
-    isOnline,
-    hasError: !!authError,
-    formReady: !!(email && password)
-  });
+  const currentError = manualError || authError;
+  const currentLoading = manualLoading || isLoading;
 
   return (
     <div className="min-h-screen bg-white flex flex-col justify-center py-6 px-4 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        {/* Debug Toggle Button */}
+        <div className="text-center mb-4">
+          <button
+            onClick={toggleDebugMode}
+            className={`px-3 py-1 text-xs rounded ${debugMode ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-700'}`}
+          >
+            Debug: {debugMode ? 'ON' : 'OFF'}
+          </button>
+        </div>
+
         {/* Logo/Header Section */}
         <div className="text-center mb-8">
           <div className="mx-auto mb-6 flex justify-center">
@@ -266,7 +292,7 @@ const LoginForm: React.FC = () => {
             Inicia sesión en tu cuenta
           </p>
           
-          {/* Connection Status Indicator */}
+          {/* Connection Status */}
           <div className="flex items-center justify-center">
             {isOnline ? (
               <div className="flex items-center text-green-600 text-sm bg-green-50 px-3 py-1 rounded-full">
@@ -301,9 +327,9 @@ const LoginForm: React.FC = () => {
                   autoComplete="email"
                   required
                   value={email}
-                  onChange={(e) => handleInputChange('email', e.target.value)}
+                  onChange={(e) => setEmail(e.target.value)}
                   placeholder="ejemplo@dominio.com"
-                  disabled={isLoading || !isOnline}
+                  disabled={currentLoading || !isOnline}
                   className="pl-12 block w-full bg-white border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base py-4 transition-all duration-200 hover:border-gray-300"
                 />
               </div>
@@ -325,16 +351,16 @@ const LoginForm: React.FC = () => {
                   autoComplete="current-password"
                   required
                   value={password}
-                  onChange={(e) => handleInputChange('password', e.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  disabled={isLoading || !isOnline}
+                  disabled={currentLoading || !isOnline}
                   className="pl-12 pr-14 block w-full bg-white border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base py-4 transition-all duration-200 hover:border-gray-300"
                 />
                 <button
                   type="button"
                   onClick={togglePasswordVisibility}
                   className="absolute inset-y-0 right-0 pr-4 flex items-center"
-                  disabled={isLoading || !isOnline}
+                  disabled={currentLoading || !isOnline}
                   tabIndex={-1}
                 >
                   {showPassword ? (
@@ -346,27 +372,34 @@ const LoginForm: React.FC = () => {
               </div>
             </div>
 
-            {/* Debug Info (Solo en desarrollo) */}
-            {process.env.NODE_ENV === 'development' && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs">
-                <div className="font-semibold text-blue-800 mb-1">Debug Info:</div>
+            {/* Debug Info Panel */}
+            {debugMode && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm">
+                <div className="font-semibold text-blue-800 mb-2">🔍 Debug Info:</div>
                 <div className="text-blue-700 space-y-1">
+                  <div>API URL: {API_BASE_URL}</div>
                   <div>Email: {email || 'vacío'}</div>
                   <div>Password Length: {password.length}</div>
-                  <div>Loading: {isLoading ? 'Sí' : 'No'}</div>
+                  <div>Auth Loading: {isLoading ? 'Sí' : 'No'}</div>
+                  <div>Manual Loading: {manualLoading ? 'Sí' : 'No'}</div>
                   <div>Online: {isOnline ? 'Sí' : 'No'}</div>
-                  <div>API URL: {API_BASE_URL}</div>
+                  <div>Has Token: {token ? 'Sí' : 'No'}</div>
+                  <div>Auth Error: {authError || 'ninguno'}</div>
+                  <div>Manual Error: {manualError || 'ninguno'}</div>
+                </div>
+                <div className="mt-2 text-xs text-blue-600">
+                  Abre DevTools Console para logs detallados
                 </div>
               </div>
             )}
 
             {/* Error Message */}
-            {authError && (
+            {currentError && (
               <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4">
                 <div className="flex">
                   <AlertCircle className="h-5 w-5 text-red-500 mr-3 flex-shrink-0 mt-0.5" />
                   <div className="text-sm text-red-700 font-medium">
-                    {authError}
+                    {currentError}
                   </div>
                 </div>
               </div>
@@ -388,16 +421,10 @@ const LoginForm: React.FC = () => {
             <div className="pt-2">
               <Button
                 type="submit"
-                disabled={isLoading || !isOnline || !email || !password}
+                disabled={currentLoading || !isOnline || !email || !password}
                 className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold py-4 px-6 rounded-xl flex items-center justify-center space-x-3 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 focus:ring-4 focus:ring-blue-300"
-                onClick={() => {
-                  debugLog('BUTTON_CLICK', 'Botón de submit clickeado', {
-                    formValid: !!(email && password),
-                    canSubmit: !isLoading && isOnline && email && password
-                  });
-                }}
               >
-                {isLoading ? (
+                {currentLoading ? (
                   <>
                     <Loader2 className="h-5 w-5 animate-spin" />
                     <span>Iniciando sesión...</span>
@@ -412,7 +439,32 @@ const LoginForm: React.FC = () => {
             </div>
           </form>
 
-          {/* Additional Links/Info */}
+          {/* Test API Button */}
+          {debugMode && (
+            <div className="mt-4">
+              <button
+                onClick={async () => {
+                  debugLog('API_TEST', 'Probando conectividad con API');
+                  try {
+                    const response = await fetch(`${API_BASE_URL}/health`, { method: 'GET' });
+                    debugLog('API_TEST_RESULT', 'Resultado test API', {
+                      status: response.status,
+                      ok: response.ok
+                    });
+                    alert(`API Test: ${response.ok ? 'OK' : 'FAIL'} (${response.status})`);
+                  } catch (error) {
+                    debugLog('API_TEST_ERROR', 'Error test API', { error });
+                    alert('API Test: ERROR - ' + (error instanceof Error ? error.message : String(error)));
+                  }
+                }}
+                className="w-full bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded text-sm"
+              >
+                🧪 Test API Connection
+              </button>
+            </div>
+          )}
+
+          {/* Additional Links */}
           <div className="mt-8">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
@@ -429,9 +481,6 @@ const LoginForm: React.FC = () => {
                 <a
                   href="/register"
                   className="text-blue-600 hover:text-blue-700 underline font-semibold transition-colors"
-                  onClick={() => {
-                    debugLog('NAVIGATION', 'Navegando a registro');
-                  }}
                 >
                   aquí
                 </a>
@@ -452,23 +501,17 @@ const LoginForm: React.FC = () => {
 };
 
 // Loading component for Suspense fallback
-const LoginLoadingFallback: React.FC = () => {
-  debugLog('SUSPENSE', 'Mostrando fallback de carga');
-  
-  return (
-    <div className="min-h-screen bg-white flex items-center justify-center px-4">
-      <div className="text-center">
-        <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
-        <p className="text-gray-600">Cargando...</p>
-      </div>
+const LoginLoadingFallback: React.FC = () => (
+  <div className="min-h-screen bg-white flex items-center justify-center px-4">
+    <div className="text-center">
+      <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
+      <p className="text-gray-600">Cargando...</p>
     </div>
-  );
-};
+  </div>
+);
 
 // Main component with Suspense boundary
 const LoginPage: React.FC = () => {
-  debugLog('APP_INIT', 'Inicializando LoginPage principal');
-  
   return (
     <Suspense fallback={<LoginLoadingFallback />}>
       <LoginForm />
