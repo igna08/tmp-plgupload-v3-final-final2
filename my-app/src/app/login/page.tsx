@@ -269,7 +269,7 @@ const LoginForm: React.FC = () => {
         {/* Footer */}
         <div className="mt-8 text-center">
           <p className="text-xs text-gray-500">
-            Sistema de Gestión Educativa © 2024
+            Scanly © 2025
           </p>
           <p className="text-xs text-gray-400 mt-1">
             API: {API_BASE_URL}
