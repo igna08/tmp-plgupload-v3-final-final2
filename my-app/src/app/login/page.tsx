@@ -270,10 +270,7 @@ const LoginForm: React.FC = () => {
         <div className="mt-8 text-center">
           <p className="text-xs text-gray-500">
             Scanly © 2025
-          </p>
-          <p className="text-xs text-gray-400 mt-1">
-            API: {API_BASE_URL}
-          </p>
+          
         </div>
       </div>
     </div>
