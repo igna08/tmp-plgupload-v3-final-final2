@@ -6,6 +6,20 @@ import axios from 'axios';
 import Input from '@/components/ui/Input';
 import Button from '@/components/ui/Button';
 import Link from 'next/link';
+import { 
+  User, 
+  Lock, 
+  AlertCircle, 
+  CheckCircle,
+  Loader2,
+  Eye,
+  EyeOff,
+  UserPlus,
+  Wifi,
+  WifiOff,
+  Mail,
+  UserCheck
+} from 'lucide-react';
 
 const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
 
@@ -26,10 +40,12 @@ interface RegisterResponse {
 }
 
 // Component that uses useSearchParams wrapped in Suspense
-const RegisterForm: React.FC = () => {
+const RegisterInvitationForm: React.FC = () => {
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -38,9 +54,25 @@ const RegisterForm: React.FC = () => {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteToken, setInviteToken] = useState('');
   const [pageLoaded, setPageLoaded] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  const [logoError, setLogoError] = useState(false);
   
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  // Monitor connection status
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Verificar si es un registro por invitación
   useEffect(() => {
@@ -127,7 +159,6 @@ const RegisterForm: React.FC = () => {
       return 'Token de invitación no válido';
     }
 
-    // El email no es requerido si viene solo el token
     console.log('Validación: TODOS LOS CAMPOS VÁLIDOS');
     return null;
   };
@@ -186,6 +217,13 @@ const RegisterForm: React.FC = () => {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+
+    // Check if online before attempting registration
+    if (!navigator.onLine) {
+      setError('No hay conexión a internet. Por favor, verifica tu conexión e inténtalo de nuevo.');
+      return;
+    }
+
     setError(null);
     setSuccessMessage(null);
 
@@ -290,203 +328,334 @@ const RegisterForm: React.FC = () => {
     }
   };
 
+  const togglePasswordVisibility = () => {
+    setShowPassword(!showPassword);
+  };
+
+  const toggleConfirmPasswordVisibility = () => {
+    setShowConfirmPassword(!showConfirmPassword);
+  };
+
   const handleManualLogin = () => {
     router.push('/login');
+  };
+
+  const handleLogoError = () => {
+    setLogoError(true);
   };
 
   // Mostrar loading solo mientras se determina el modo
   if (!pageLoaded) {
     return (
-      <div className="w-full max-w-md p-8 space-y-6 bg-white shadow-xl rounded-radiusLarge">
-        <div className="flex flex-col items-center justify-center space-y-4">
-          <svg className="animate-spin h-8 w-8 text-shopifyGreen" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          <p className="text-sm text-neutralTextSecondary">Cargando...</p>
+      <div className="min-h-screen bg-white flex flex-col justify-center py-6 px-4 sm:px-6 lg:px-8">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="bg-gray-50 shadow-2xl rounded-2xl px-8 py-10 sm:px-12 border border-gray-100">
+            <div className="flex flex-col items-center justify-center space-y-4">
+              <Loader2 className="h-8 w-8 text-blue-600 animate-spin" />
+              <p className="text-sm text-gray-600 font-medium">Cargando página de registro...</p>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="w-full max-w-md p-8 space-y-6 bg-white shadow-xl rounded-radiusLarge">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-neutralDarker">
-          {isInviteMode ? 'Completar Registro' : 'Crear Cuenta'}
-        </h1>
-        <p className="mt-2 text-sm text-neutralTextSecondary">
-          {isInviteMode 
-            ? `Complete los datos para finalizar su registro${inviteEmail ? ` (${inviteEmail})` : ''}` 
-            : 'Únete para acceder a todas las funcionalidades'
-          }
-        </p>
-      </div>
-
-      {successMessage && (
-        <div className="p-4 bg-green-50 border border-shopifyGreen rounded-radiusSmall text-center">
-          <div className="flex items-center justify-center mb-2">
-            <svg className="w-5 h-5 text-shopifyGreen mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
-            <p className="text-sm font-medium text-shopifyGreen">¡Registro Completado!</p>
+    <div className="min-h-screen bg-white flex flex-col justify-center py-6 px-4 sm:px-6 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        {/* Logo/Header Section */}
+        <div className="text-center mb-8">
+          <div className="mx-auto mb-6 flex justify-center">
+            {!logoError ? (
+              <img
+                src="https://app-web-final-qr.vercel.app/logo.png"
+                alt="Logo del Sistema"
+                className="h-24 w-auto max-w-full"
+                onError={handleLogoError}
+                style={{ objectFit: 'contain' }}
+              />
+            ) : (
+              <div className="h-20 w-20 bg-gradient-to-br from-blue-600 to-blue-700 rounded-full flex items-center justify-center shadow-lg">
+                <UserCheck className="h-10 w-10 text-white" />
+              </div>
+            )}
           </div>
-          <p className="text-sm text-shopifyGreen mb-3">{successMessage}</p>
+          <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-3">
+            {isInviteMode ? 'Completar Registro' : 'Crear Cuenta'}
+          </h1>
+          <p className="text-base text-gray-600 mb-4">
+            {isInviteMode 
+              ? `Complete los datos para finalizar su registro${inviteEmail ? ` (${inviteEmail})` : ''}` 
+              : 'Únete a nuestro sistema educativo'
+            }
+          </p>
           
-          {redirectCountdown !== null && redirectCountdown > 0 && (
-            <div className="mb-3">
-              <p className="text-xs text-neutralTextSecondary">
-                Redirigiendo en {redirectCountdown} segundo{redirectCountdown !== 1 ? 's' : ''}...
-              </p>
-              <div className="w-full bg-gray-200 rounded-full h-1 mt-2">
-                <div 
-                  className="bg-shopifyGreen h-1 rounded-full transition-all duration-1000"
-                  style={{ width: `${((3 - redirectCountdown) / 3) * 100}%` }}
-                ></div>
+          {/* Connection Status Indicator */}
+          <div className="flex items-center justify-center">
+            {isOnline ? (
+              <div className="flex items-center text-green-600 text-sm bg-green-50 px-3 py-1 rounded-full">
+                <Wifi className="h-4 w-4 mr-2" />
+                <span>Conectado</span>
+              </div>
+            ) : (
+              <div className="flex items-center text-red-500 text-sm bg-red-50 px-3 py-1 rounded-full">
+                <WifiOff className="h-4 w-4 mr-2" />
+                <span>Sin conexión</span>
+              </div>
+            )}
+          </div>
+
+          {/* Invitation Email Display */}
+          {isInviteMode && inviteEmail && (
+            <div className="mt-4 flex items-center justify-center">
+              <div className="flex items-center text-blue-600 text-sm bg-blue-50 px-4 py-2 rounded-full border border-blue-200">
+                <Mail className="h-4 w-4 mr-2" />
+                <span className="font-medium">{inviteEmail}</span>
               </div>
             </div>
           )}
-          
-          <Button 
-            variant="primary" 
-            size="small"
-            onClick={handleManualLogin}
-            className="w-full"
-          >
-            Ir al Inicio de Sesión
-          </Button>
         </div>
-      )}
 
-      {error && (
-        <div className="p-3 bg-red-50 border border-accentRed rounded-radiusSmall">
-          <div className="flex items-start">
-            <svg className="w-4 h-4 text-accentRed mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-            </svg>
-            <p className="text-sm text-accentRed">{error}</p>
-          </div>
-        </div>
-      )}
-
-      {!successMessage && (
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label htmlFor="fullName" className="block text-sm font-medium text-neutralDark mb-2">
-              Nombre Completo *
-            </label>
-            <Input
-              id="fullName"
-              name="fullName"
-              type="text"
-              autoComplete="name"
-              required
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              placeholder="Ingresa tu nombre completo"
-              disabled={isLoading}
-              className="transition-all duration-200"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-neutralDark mb-2">
-              Contraseña *
-            </label>
-            <Input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="new-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Mínimo 8 caracteres"
-              disabled={isLoading}
-              className="transition-all duration-200"
-            />
-            <p className="mt-1 text-xs text-neutralTextSecondary">
-              Usa al menos 8 caracteres con letras y números
-            </p>
-          </div>
-
-          <div>
-            <label htmlFor="confirmPassword" className="block text-sm font-medium text-neutralDark mb-2">
-              Confirmar Contraseña *
-            </label>
-            <Input
-              id="confirmPassword"
-              name="confirmPassword"
-              type="password"
-              autoComplete="new-password"
-              required
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Confirma tu contraseña"
-              disabled={isLoading}
-              className="transition-all duration-200"
-            />
-          </div>
-
-          <div className="pt-2">
-            <Button
-              type="submit"
-              variant="primary"
-              className="w-full transition-all duration-200"
-              disabled={isLoading}
-              size="large"
-            >
-              {isLoading ? (
-                <div className="flex items-center justify-center">
-                  <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  {isInviteMode ? 'Completando registro...' : 'Creando cuenta...'}
+        {/* Registration Form Card */}
+        <div className="bg-gray-50 shadow-2xl rounded-2xl px-8 py-10 sm:px-12 border border-gray-100">
+          {/* Success Message */}
+          {successMessage && !error && (
+            <div className="mb-8 bg-green-50 border-2 border-green-200 rounded-xl p-6">
+              <div className="flex">
+                <CheckCircle className="h-6 w-6 text-green-500 mr-3 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-green-700 font-medium">
+                  {successMessage}
                 </div>
-              ) : (
-                isInviteMode ? 'Completar Registro' : 'Crear Cuenta'
+              </div>
+              
+              {redirectCountdown !== null && redirectCountdown > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs text-green-600 mb-2">
+                    Redirigiendo en {redirectCountdown} segundo{redirectCountdown !== 1 ? 's' : ''}...
+                  </p>
+                  <div className="w-full bg-green-200 rounded-full h-2">
+                    <div 
+                      className="bg-green-500 h-2 rounded-full transition-all duration-1000"
+                      style={{ width: `${((3 - redirectCountdown) / 3) * 100}%` }}
+                    ></div>
+                  </div>
+                </div>
               )}
-            </Button>
-          </div>
-        </form>
-      )}
+              
+              <div className="mt-6">
+                <Button 
+                  onClick={handleManualLogin}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                >
+                  Ir al Inicio de Sesión
+                </Button>
+              </div>
+            </div>
+          )}
 
-      {!isInviteMode && (
-        <div className="text-sm text-center text-neutralTextSecondary border-t pt-4">
-          ¿Ya tienes una cuenta?{' '}
-          <Link 
-            href="/login" 
-            className="font-medium text-shopifyGreen hover:text-green-700 transition-colors duration-200"
-          >
-            Inicia sesión aquí
-          </Link>
+          {/* Error Message */}
+          {error && (
+            <div className="mb-6 bg-red-50 border-2 border-red-200 rounded-xl p-4">
+              <div className="flex">
+                <AlertCircle className="h-5 w-5 text-red-500 mr-3 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-red-700 font-medium">
+                  {error}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Offline Warning */}
+          {!isOnline && (
+            <div className="mb-6 bg-yellow-50 border-2 border-yellow-200 rounded-xl p-4">
+              <div className="flex">
+                <WifiOff className="h-5 w-5 text-yellow-500 mr-3 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-yellow-700 font-medium">
+                  Sin conexión a internet. Verifica tu conexión para continuar.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!successMessage && (
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Full Name Field */}
+              <div>
+                <label htmlFor="fullName" className="block text-sm font-semibold text-gray-700 mb-3">
+                  Nombre Completo
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <User className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <Input
+                    id="fullName"
+                    name="fullName"
+                    type="text"
+                    autoComplete="name"
+                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Tu nombre completo"
+                    disabled={isLoading || !isOnline}
+                    className="pl-12 block w-full bg-white border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base py-4 transition-all duration-200 hover:border-gray-300"
+                  />
+                </div>
+              </div>
+
+              {/* Password Field */}
+              <div>
+                <label htmlFor="password" className="block text-sm font-semibold text-gray-700 mb-3">
+                  Contraseña
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <Lock className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <Input
+                    id="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Mínimo 8 caracteres"
+                    disabled={isLoading || !isOnline}
+                    className="pl-12 pr-14 block w-full bg-white border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base py-4 transition-all duration-200 hover:border-gray-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={togglePasswordVisibility}
+                    className="absolute inset-y-0 right-0 pr-4 flex items-center"
+                    disabled={isLoading || !isOnline}
+                    tabIndex={-1}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600 transition-colors" />
+                    ) : (
+                      <Eye className="h-5 w-5 text-gray-400 hover:text-gray-600 transition-colors" />
+                    )}
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-gray-500 font-medium">
+                  Usa al menos 8 caracteres con letras y números
+                </p>
+              </div>
+
+              {/* Confirm Password Field */}
+              <div>
+                <label htmlFor="confirmPassword" className="block text-sm font-semibold text-gray-700 mb-3">
+                  Confirmar Contraseña
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <Lock className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <Input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirma tu contraseña"
+                    disabled={isLoading || !isOnline}
+                    className="pl-12 pr-14 block w-full bg-white border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base py-4 transition-all duration-200 hover:border-gray-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={toggleConfirmPasswordVisibility}
+                    className="absolute inset-y-0 right-0 pr-4 flex items-center"
+                    disabled={isLoading || !isOnline}
+                    tabIndex={-1}
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600 transition-colors" />
+                    ) : (
+                      <Eye className="h-5 w-5 text-gray-400 hover:text-gray-600 transition-colors" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <div className="pt-2">
+                <Button
+                  type="submit"
+                  disabled={isLoading || !isOnline || !fullName || !password || !confirmPassword}
+                  className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold py-4 px-6 rounded-xl flex items-center justify-center space-x-3 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 focus:ring-4 focus:ring-blue-300"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span>Completando registro...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserCheck className="h-5 w-5" />
+                      <span>Completar Registro</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          )}
+
+          {/* Login Link - Solo mostrar si no es modo invitación */}
+          {!isInviteMode && (
+            <div className="mt-8">
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-4 bg-gray-50 text-gray-500 font-medium">¿Ya tienes cuenta?</span>
+                </div>
+              </div>
+
+              <div className="mt-6 text-center">
+                <Link href="/login" className="text-sm font-semibold text-blue-600 hover:text-blue-700 underline transition-colors">
+                  Inicia sesión aquí
+                </Link>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Footer */}
+        <div className="mt-8 text-center">
+          <p className="text-sm text-gray-500 font-medium">
+            Scanly © 2025 - Sistema Educativo
+          </p>
+        </div>
+      </div>
     </div>
   );
 };
 
 // Loading component for Suspense fallback
-const RegisterLoadingFallback: React.FC = () => (
-  <div className="w-full max-w-md p-8 space-y-6 bg-white shadow-xl rounded-radiusLarge">
-    <div className="flex flex-col items-center justify-center space-y-4">
-      <svg className="animate-spin h-8 w-8 text-shopifyGreen" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-      </svg>
-      <p className="text-sm text-neutralTextSecondary">Cargando página de registro...</p>
+const RegisterInvitationLoadingFallback: React.FC = () => (
+  <div className="min-h-screen bg-white flex flex-col justify-center py-6 px-4 sm:px-6 lg:px-8">
+    <div className="sm:mx-auto sm:w-full sm:max-w-md">
+      <div className="bg-gray-50 shadow-2xl rounded-2xl px-8 py-10 sm:px-12 border border-gray-100">
+        <div className="flex flex-col items-center justify-center space-y-4">
+          <Loader2 className="h-8 w-8 text-blue-600 animate-spin" />
+          <p className="text-sm text-gray-600 font-medium">Cargando página de registro...</p>
+        </div>
+      </div>
     </div>
   </div>
 );
 
 // Main component with Suspense boundary
-const RegisterPage: React.FC = () => {
+const RegisterInvitationPage: React.FC = () => {
   return (
-    <Suspense fallback={<RegisterLoadingFallback />}>
-      <RegisterForm />
+    <Suspense fallback={<RegisterInvitationLoadingFallback />}>
+      <RegisterInvitationForm />
     </Suspense>
   );
 };
 
-export default RegisterPage;
+export default RegisterInvitationPage;
