@@ -13,20 +13,39 @@ import {
   Eye,
   EyeOff,
   LogIn,
-  GraduationCap
+  Wifi,
+  WifiOff
 } from 'lucide-react';
+
+const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
 
 // Component that uses useSearchParams wrapped in Suspense
 const LoginForm: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  const [logoError, setLogoError] = useState(false);
   const { login, isLoading, error: authError, token } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+
   // Obtener la URL de redirección de los query params
   const redirectUrl = searchParams.get('redirect') || '/';
+
+  // Monitor connection status
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Si ya está autenticado, redirigir
   useEffect(() => {
@@ -37,10 +56,21 @@ const LoginForm: React.FC = () => {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    
-    const success = await login(email, password);
-    if (success) {
-      router.push(redirectUrl);
+
+    // Check if online before attempting login
+    if (!navigator.onLine) {
+      alert('No hay conexión a internet. Por favor, verifica tu conexión e inténtalo de nuevo.');
+      return;
+    }
+
+    try {
+      const success = await login(email, password);
+      if (success) {
+        router.push(redirectUrl);
+      }
+    } catch (error) {
+      console.error('Error en login:', error);
+      // El error ya se maneja en el contexto de autenticación
     }
   };
 
@@ -48,10 +78,14 @@ const LoginForm: React.FC = () => {
     setShowPassword(!showPassword);
   };
 
+  const handleLogoError = () => {
+    setLogoError(true);
+  };
+
   // Si ya está autenticado, mostrar mensaje de carga
   if (token) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
           <p className="text-gray-600">Redirigiendo...</p>
@@ -61,23 +95,50 @@ const LoginForm: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col justify-center py-6 px-4 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         {/* Logo/Header Section */}
-        <div className="text-center mb-8">
-          <div className="mx-auto h-16 w-16 bg-blue-600 rounded-full flex items-center justify-center mb-4">
-            <GraduationCap className="h-8 w-8 text-white" />
+        <div className="text-center mb-6">
+          <div className="mx-auto mb-6 flex justify-center">
+            {!logoError ? (
+              <img
+                src="https://app-web-final-qr.vercel.app/logo.png"
+                alt="Logo del Sistema"
+                className="h-20 w-auto max-w-full"
+                onError={handleLogoError}
+                style={{ objectFit: 'contain' }}
+              />
+            ) : (
+              <div className="h-16 w-16 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-full flex items-center justify-center shadow-lg">
+                <User className="h-8 w-8 text-white" />
+              </div>
+            )}
           </div>
-          <h2 className="text-3xl font-bold text-gray-900">
+          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
             Iniciar Sesión
           </h2>
-          <p className="mt-2 text-sm text-gray-600">
+          <p className="text-sm text-gray-600">
             Accede a tu cuenta del sistema educativo
           </p>
+          
+          {/* Connection Status Indicator */}
+          <div className="flex items-center justify-center mt-3">
+            {isOnline ? (
+              <div className="flex items-center text-green-600 text-xs">
+                <Wifi className="h-3 w-3 mr-1" />
+                <span>Conectado</span>
+              </div>
+            ) : (
+              <div className="flex items-center text-red-500 text-xs">
+                <WifiOff className="h-3 w-3 mr-1" />
+                <span>Sin conexión</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Login Form Card */}
-        <div className="bg-white shadow-lg rounded-lg px-6 py-8 sm:px-10">
+        <div className="bg-white shadow-xl rounded-xl px-6 py-8 sm:px-10 border border-gray-100">
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Email Field */}
             <div>
@@ -97,8 +158,8 @@ const LoginForm: React.FC = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="ejemplo@dominio.com"
-                  disabled={isLoading}
-                  className="pl-10 block w-full border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm py-3"
+                  disabled={isLoading || !isOnline}
+                  className="pl-10 block w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm py-3 transition-all duration-200"
                 />
               </div>
             </div>
@@ -121,14 +182,15 @@ const LoginForm: React.FC = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  disabled={isLoading}
-                  className="pl-10 pr-10 block w-full border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm py-3"
+                  disabled={isLoading || !isOnline}
+                  className="pl-10 pr-12 block w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm py-3 transition-all duration-200"
                 />
                 <button
                   type="button"
                   onClick={togglePasswordVisibility}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                  disabled={isLoading}
+                  disabled={isLoading || !isOnline}
+                  tabIndex={-1}
                 >
                   {showPassword ? (
                     <EyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600 transition-colors" />
@@ -141,11 +203,23 @@ const LoginForm: React.FC = () => {
 
             {/* Error Message */}
             {authError && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 animate-pulse">
                 <div className="flex">
-                  <AlertCircle className="h-5 w-5 text-red-400 mr-3 flex-shrink-0" />
+                  <AlertCircle className="h-5 w-5 text-red-400 mr-3 flex-shrink-0 mt-0.5" />
                   <div className="text-sm text-red-700">
                     {authError}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Offline Warning */}
+            {!isOnline && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex">
+                  <WifiOff className="h-5 w-5 text-yellow-400 mr-3 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-yellow-700">
+                    Sin conexión a internet. Verifica tu conexión para continuar.
                   </div>
                 </div>
               </div>
@@ -155,8 +229,8 @@ const LoginForm: React.FC = () => {
             <div>
               <Button
                 type="submit"
-                disabled={isLoading}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg flex items-center justify-center space-x-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isLoading || !isOnline || !email || !password}
+                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-3 px-4 rounded-lg flex items-center justify-center space-x-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
               >
                 {isLoading ? (
                   <>
@@ -183,7 +257,7 @@ const LoginForm: React.FC = () => {
                 <span className="px-2 bg-white text-gray-500">¿Necesitas ayuda?</span>
               </div>
             </div>
-            
+
             <div className="mt-6 text-center">
               <p className="text-sm text-gray-600">
                 Si tienes problemas para acceder, contacta al administrador del sistema.
@@ -195,8 +269,8 @@ const LoginForm: React.FC = () => {
         {/* Footer */}
         <div className="mt-8 text-center">
           <p className="text-xs text-gray-500">
-            Sistema de Gestión Educativa © 2024
-          </p>
+            Scanly © 2025
+          
         </div>
       </div>
     </div>
@@ -205,7 +279,7 @@ const LoginForm: React.FC = () => {
 
 // Loading component for Suspense fallback
 const LoginLoadingFallback: React.FC = () => (
-  <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+  <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
     <div className="text-center">
       <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
       <p className="text-gray-600">Cargando...</p>
