@@ -1,9 +1,9 @@
 "use client";
-import { useAuth } from '@/context/AuthContext'; // ← AGREGAR ESTA IMPORTACIÓN
+import { useAuth } from '@/context/AuthContext';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { useRouter, usePathname } from 'next/navigation'; // Asumiendo Next.js
+import { useRouter, usePathname } from 'next/navigation';
 import { 
   Search, 
   Bell, 
@@ -49,7 +49,6 @@ interface BreadcrumbItem {
 interface TopBarProps {
   onMobileMenuToggle?: () => void;
   isMobileMenuOpen?: boolean;
-  // Nuevas props para el breadcrumb dinámico
   pageTitle?: string;
   breadcrumbs?: BreadcrumbItem[];
   onSearch?: (query: string) => void;
@@ -66,7 +65,7 @@ const TopBar: React.FC<TopBarProps> = ({
 }) => {
   const router = useRouter?.() || null;
   const pathname = usePathname?.() || '';
-  const {  logout } = useAuth();
+  const { logout } = useAuth();
 
   // State
   const [user, setUser] = useState<User | null>(null);
@@ -76,11 +75,17 @@ const TopBar: React.FC<TopBarProps> = ({
   const [searchValue, setSearchValue] = useState('');
   const [isLoadingUser, setIsLoadingUser] = useState(true);
   const [isLoadingIncidents, setIsLoadingIncidents] = useState(false);
+  const [logoError, setLogoError] = useState(false);
+
+  // Handle logo error
+  const handleLogoError = () => {
+    setLogoError(true);
+  };
 
   // Función para generar breadcrumbs automáticamente basado en la URL
   const generateBreadcrumbsFromPath = (): BreadcrumbItem[] => {
     const pathSegments = pathname.split('/').filter(segment => segment);
-    
+
     const breadcrumbMap: { [key: string]: string } = {
       'dashboard': 'Dashboard',
       'schools': 'Escuelas',
@@ -100,7 +105,7 @@ const TopBar: React.FC<TopBarProps> = ({
     pathSegments.forEach((segment, index) => {
       currentPath += `/${segment}`;
       const isLast = index === pathSegments.length - 1;
-      
+
       breadcrumbs.push({
         label: breadcrumbMap[segment] || segment.charAt(0).toUpperCase() + segment.slice(1),
         href: isLast ? undefined : currentPath,
@@ -162,7 +167,6 @@ const TopBar: React.FC<TopBarProps> = ({
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchValue.trim()) {
-      // Redirigir a página de búsqueda o ejecutar búsqueda
       if (router) {
         router.push(`/search?q=${encodeURIComponent(searchValue.trim())}`);
       }
@@ -185,7 +189,7 @@ const TopBar: React.FC<TopBarProps> = ({
       .join('')
       .toUpperCase()
       .slice(0, 2);
-    
+
     const colors = [
       'bg-blue-500',
       'bg-green-500',
@@ -196,7 +200,7 @@ const TopBar: React.FC<TopBarProps> = ({
       'bg-yellow-500',
       'bg-teal-500'
     ];
-    
+
     const colorIndex = name.length % colors.length;
     return colors[colorIndex];
   };
@@ -206,13 +210,13 @@ const TopBar: React.FC<TopBarProps> = ({
     const date = new Date(dateString);
     const now = new Date();
     const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
-    
+
     if (diffInMinutes < 1) return 'Ahora mismo';
     if (diffInMinutes < 60) return `Hace ${diffInMinutes} min`;
-    
+
     const diffInHours = Math.floor(diffInMinutes / 60);
     if (diffInHours < 24) return `Hace ${diffInHours} hora${diffInHours > 1 ? 's' : ''}`;
-    
+
     const diffInDays = Math.floor(diffInHours / 24);
     return `Hace ${diffInDays} día${diffInDays > 1 ? 's' : ''}`;
   };
@@ -239,11 +243,11 @@ const TopBar: React.FC<TopBarProps> = ({
   }).length;
 
   // Logout handler
-const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(() => {
     console.log('[TopBar] Logout initiated');
-    // Usar la función logout del contexto que maneja toda la limpieza
     logout();
   }, [logout]);
+
   // Handle breadcrumb navigation
   const handleBreadcrumbClick = (href: string) => {
     if (router && href) {
@@ -251,27 +255,51 @@ const handleLogout = useCallback(() => {
     }
   };
 
+  // Handle mobile menu toggle with proper callback
+  const handleMobileMenuToggle = () => {
+    console.log('Mobile menu toggle clicked', { current: isMobileMenuOpen });
+    if (onMobileMenuToggle) {
+      onMobileMenuToggle();
+    }
+  };
+
   return (
     <header className="h-16 bg-white border-b border-gray-200 shadow-sm">
       <div className="flex items-center justify-between h-full px-4 lg:px-6">
-        
+
         {/* Left Section */}
         <div className="flex items-center space-x-4">
-          {/* Mobile Menu Button */}
+          {/* Mobile Menu Button - Mejorado */}
           <button
-            onClick={onMobileMenuToggle}
-            className="p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 md:hidden transition-colors"
-            aria-label="Toggle mobile menu"
+            onClick={handleMobileMenuToggle}
+            className="p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 md:hidden transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+            aria-label={isMobileMenuOpen ? "Cerrar menú" : "Abrir menú"}
+            type="button"
           >
-            {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+            {isMobileMenuOpen ? (
+              <X size={20} className="transition-transform duration-200" />
+            ) : (
+              <Menu size={20} className="transition-transform duration-200" />
+            )}
           </button>
 
-          {/* Logo for mobile */}
+          {/* Logo personalizado para mobile */}
           <div className="flex items-center md:hidden">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center mr-2">
-              <Package className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-lg font-bold text-gray-900">EduAssets</span>
+            {!logoError ? (
+              <img
+                src="https://app-web-final-qr.vercel.app/logo.png"
+                alt="Logo del Sistema"
+                className="h-8 w-auto max-w-[120px] object-contain"
+                onError={handleLogoError}
+              />
+            ) : (
+              <div className="flex items-center">
+                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center mr-2">
+                  <Package className="w-5 h-5 text-white" />
+                </div>
+                <span className="text-lg font-bold text-gray-900">Scanly</span>
+              </div>
+            )}
           </div>
 
           {/* Dynamic Breadcrumb for desktop */}
@@ -335,13 +363,12 @@ const handleLogout = useCallback(() => {
                 </button>
               </div>
             )}
-            {/* Search suggestions dropdown could go here */}
           </form>
         </div>
 
-        {/* Right Section - unchanged */}
+        {/* Right Section */}
         <div className="flex items-center space-x-3">
-          
+
           {/* Mobile Search Button */}
           <button className="p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 md:hidden transition-colors">
             <Search size={20} />
@@ -388,7 +415,7 @@ const handleLogout = useCallback(() => {
                     incidents.map((incident) => {
                       const isUnread = !incident.resolved_at && 
                         new Date(incident.reported_at) > new Date(Date.now() - 24 * 60 * 60 * 1000);
-                      
+
                       return (
                         <div
                           key={incident.id}
@@ -447,7 +474,7 @@ const handleLogout = useCallback(() => {
                     <User size={16} className="text-white" />
                   </div>
                 )}
-                
+
                 {/* User Info - Hidden on mobile */}
                 <div className="hidden sm:block text-left">
                   {isLoadingUser ? (

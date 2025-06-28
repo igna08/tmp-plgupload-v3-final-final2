@@ -35,7 +35,7 @@ const GoogleLoginButton: React.FC<{ disabled: boolean; onGoogleLogin: (token: st
       // Inicializar Google Sign-In cuando el script se carga
       if (window.google) {
         window.google.accounts.id.initialize({
-          client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '458889252890-aj2ig330eigkobr83h6n0e4nrnd269rc.apps.googleusercontent.com',
+          client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || 'tu_google_client_id_aqui',
           callback: handleGoogleResponse,
           auto_select: false,
           cancel_on_tap_outside: true,
