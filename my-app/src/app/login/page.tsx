@@ -17,7 +17,7 @@ import {
   WifiOff
 } from 'lucide-react';
 
-const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
+const API_BASE_URL = 'localhost:8000/api';
 
 // Google Login Component
 const GoogleLoginButton: React.FC<{ disabled: boolean; onGoogleLogin: (token: string) => Promise<void> }> = ({ disabled, onGoogleLogin }) => {
@@ -111,7 +111,18 @@ const LoginForm: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [logoError, setLogoError] = useState(false);
-  const { login, isLoading, error: authError, token } = useAuth();
+  
+  // Actualizar la desestructuración del contexto para incluir las nuevas funciones
+  const { 
+    login, 
+    loginWithGoogle, 
+    isLoading, 
+    error: authError, 
+    token,
+    clearError,
+    isAuthenticated 
+  } = useAuth();
+  
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -132,12 +143,19 @@ const LoginForm: React.FC = () => {
     };
   }, []);
 
-  // Si ya está autenticado, redirigir
+  // Si ya está autenticado, redirigir - usar isAuthenticated en lugar de solo token
   useEffect(() => {
-    if (token) {
+    if (isAuthenticated) {
       router.replace(redirectUrl);
     }
-  }, [token, router, redirectUrl]);
+  }, [isAuthenticated, router, redirectUrl]);
+
+  // Limpiar errores cuando el usuario empiece a escribir
+  useEffect(() => {
+    if (authError && (email || password)) {
+      clearError();
+    }
+  }, [email, password, authError, clearError]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -159,6 +177,7 @@ const LoginForm: React.FC = () => {
     }
   };
 
+  // Actualizar la función handleGoogleLogin con las mejoras del contexto
   const handleGoogleLogin = async (idToken: string) => {
     if (!navigator.onLine) {
       alert('No hay conexión a internet. Por favor, verifica tu conexión e inténtalo de nuevo.');
@@ -166,37 +185,17 @@ const LoginForm: React.FC = () => {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/google-login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id_token: idToken
-        })
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        // Usar el contexto de autenticación para almacenar el token
-        // Asumiendo que tienes una función setToken en tu contexto
-        localStorage.setItem('access_token', data.access_token);
-        
-        // Si tu contexto de auth tiene una función para setear el token directamente:
-        // setToken(data.access_token);
-        
-        // Redirigir al usuario
+      // Usar la nueva función del contexto
+      const success = await loginWithGoogle(idToken);
+      
+      if (success) {
+        // El contexto ya maneja el almacenamiento del token y la obtención del usuario
         router.push(redirectUrl);
-        
-        // Forzar una actualización del estado de autenticación
-        window.location.reload();
-      } else {
-        throw new Error(data.detail || 'Error al iniciar sesión con Google');
       }
+      // Si hay error, ya está manejado en el contexto y se mostrará en la UI
     } catch (error) {
       console.error('Error en Google Login:', error);
-      alert(error instanceof Error ? error.message : 'Error al iniciar sesión con Google');
+      // El contexto ya maneja el error, no necesitas alert aquí
     }
   };
 
@@ -209,7 +208,7 @@ const LoginForm: React.FC = () => {
   };
 
   // Si ya está autenticado, mostrar mensaje de carga
-  if (token) {
+  if (isAuthenticated) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center px-4">
         <div className="text-center">
