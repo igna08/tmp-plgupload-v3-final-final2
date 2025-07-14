@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useCa
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
 
-const API_BASE_URL = 'localhost:8000/api';
+const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
 
 interface UserRoles {
   super_admin: boolean;

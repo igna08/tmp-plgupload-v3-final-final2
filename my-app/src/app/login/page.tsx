@@ -17,7 +17,7 @@ import {
   WifiOff
 } from 'lucide-react';
 
-const API_BASE_URL = 'localhost:8000/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ;
 
 // Google Login Component
 const GoogleLoginButton: React.FC<{ disabled: boolean; onGoogleLogin: (token: string) => Promise<void> }> = ({ disabled, onGoogleLogin }) => {
