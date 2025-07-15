@@ -5,7 +5,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useRouter, usePathname } from 'next/navigation';
 import { 
-  Search, 
   Bell, 
   User, 
   Menu, 
@@ -13,8 +12,9 @@ import {
   LogOut, 
   ChevronDown,
   Package,
-  Home,
-  ChevronRight
+  ChevronRight,
+  Star,
+  Activity
 } from 'lucide-react';
 
 // API Configuration
@@ -51,17 +51,13 @@ interface TopBarProps {
   isMobileMenuOpen?: boolean;
   pageTitle?: string;
   breadcrumbs?: BreadcrumbItem[];
-  onSearch?: (query: string) => void;
-  searchPlaceholder?: string;
 }
 
 const TopBar: React.FC<TopBarProps> = ({ 
   onMobileMenuToggle, 
   isMobileMenuOpen,
   pageTitle,
-  breadcrumbs,
-  onSearch,
-  searchPlaceholder = "Buscar activos, escuelas, usuarios..."
+  breadcrumbs
 }) => {
   const router = useRouter?.() || null;
   const pathname = usePathname?.() || '';
@@ -72,7 +68,6 @@ const TopBar: React.FC<TopBarProps> = ({
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
-  const [searchValue, setSearchValue] = useState('');
   const [isLoadingUser, setIsLoadingUser] = useState(true);
   const [isLoadingIncidents, setIsLoadingIncidents] = useState(false);
   const [logoError, setLogoError] = useState(false);
@@ -154,24 +149,6 @@ const TopBar: React.FC<TopBarProps> = ({
     fetchUser();
     fetchIncidents();
   }, [fetchUser, fetchIncidents]);
-
-  // Handle search
-  const handleSearch = (value: string) => {
-    setSearchValue(value);
-    if (onSearch) {
-      onSearch(value);
-    }
-  };
-
-  // Handle search submit
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchValue.trim()) {
-      if (router) {
-        router.push(`/search?q=${encodeURIComponent(searchValue.trim())}`);
-      }
-    }
-  };
 
   // Refresh incidents when notification dropdown opens
   const handleNotificationToggle = () => {
@@ -336,43 +313,21 @@ const TopBar: React.FC<TopBarProps> = ({
           )}
         </div>
 
-        {/* Center - Enhanced Search Bar */}
-        <div className="hidden md:flex flex-1 max-w-md mx-8">
-          <form onSubmit={handleSearchSubmit} className="relative w-full">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-4 w-4 text-gray-400" />
-            </div>
-            <input
-              type="text"
-              placeholder={searchPlaceholder}
-              value={searchValue}
-              onChange={(e) => handleSearch(e.target.value)}
-              className="block w-full pl-10 pr-10 py-2 border border-gray-200 rounded-lg 
-                         bg-gray-50 text-sm placeholder-gray-500
-                         focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white
-                         transition-all duration-200"
-            />
-            {searchValue && (
-              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                <button
-                  type="button"
-                  onClick={() => handleSearch('')}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            )}
-          </form>
+        {/* Center - Quick Actions */}
+        <div className="hidden md:flex items-center space-x-4">
+          <div className="flex items-center space-x-2 bg-gradient-to-r from-blue-50 to-indigo-50 px-3 py-2 rounded-lg border border-blue-100">
+            <Activity className="w-4 h-4 text-blue-600" />
+            <span className="text-sm font-medium text-blue-700">Sistema Activo</span>
+          </div>
+          
+          <div className="flex items-center space-x-2 bg-gradient-to-r from-green-50 to-emerald-50 px-3 py-2 rounded-lg border border-green-100">
+            <Star className="w-4 h-4 text-green-600" />
+            <span className="text-sm font-medium text-green-700">Todo Operativo</span>
+          </div>
         </div>
 
         {/* Right Section */}
         <div className="flex items-center space-x-3">
-
-          {/* Mobile Search Button */}
-          <button className="p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 md:hidden transition-colors">
-            <Search size={20} />
-          </button>
 
           {/* Notifications */}
           <div className="relative">
@@ -525,24 +480,6 @@ const TopBar: React.FC<TopBarProps> = ({
             )}
           </div>
         </div>
-      </div>
-
-      {/* Mobile Search Bar */}
-      <div className="md:hidden px-4 pb-3">
-        <form onSubmit={handleSearchSubmit} className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-4 w-4 text-gray-400" />
-          </div>
-          <input
-            type="text"
-            placeholder="Buscar..."
-            value={searchValue}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg 
-                       bg-gray-50 text-sm placeholder-gray-500
-                       focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white"
-          />
-        </form>
       </div>
     </header>
   );
