@@ -12,10 +12,18 @@ interface AppLayoutProps {
 
 const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const pathname = usePathname();
-  // In a real app, this mobile sidebar state would be managed globally or lifted higher
+  // Mobile sidebar state management
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = React.useState(false);
 
-  // TODO: Implement a way to toggle isMobileSidebarOpen (e.g., via a button in TopBar)
+  // Function to toggle mobile sidebar
+  const toggleMobileSidebar = () => {
+    setIsMobileSidebarOpen(prev => !prev);
+  };
+
+  // Close mobile sidebar when pathname changes
+  React.useEffect(() => {
+    setIsMobileSidebarOpen(false);
+  }, [pathname]);
 
   const authRoutes = ['/login', '/register', '/register/invitation'];
   const isAuthPage = authRoutes.includes(pathname);
@@ -34,9 +42,14 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   return (
     <ProtectedRoute>
       <div className="flex h-screen bg-neutralLighter">
-        <Sidebar isMobileOpen={isMobileSidebarOpen} /> {/* Pass state if needed for toggle */}
+        <Sidebar 
+          isMobileOpen={isMobileSidebarOpen} 
+        />
         <div className="flex-1 flex flex-col overflow-hidden">
-          <TopBar /> {/* TopBar might need a prop to toggle mobile sidebar */}
+          <TopBar 
+            onMobileMenuToggle={toggleMobileSidebar}
+            isMobileMenuOpen={isMobileSidebarOpen}
+          />
           <main className="flex-1 overflow-x-hidden overflow-y-auto bg-neutralLighter p-4 md:p-6">
             {children}
           </main>

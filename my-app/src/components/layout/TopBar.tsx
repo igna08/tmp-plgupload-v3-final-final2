@@ -47,8 +47,8 @@ interface BreadcrumbItem {
 }
 
 interface TopBarProps {
-  onMobileMenuToggle?: () => void;
-  isMobileMenuOpen?: boolean;
+  onMobileMenuToggle: () => void;  // Hacer requerido
+  isMobileMenuOpen: boolean;       // Hacer requerido
   pageTitle?: string;
   breadcrumbs?: BreadcrumbItem[];
 }
@@ -72,6 +72,32 @@ const TopBar: React.FC<TopBarProps> = ({
   const [isLoadingIncidents, setIsLoadingIncidents] = useState(false);
   const [logoError, setLogoError] = useState(false);
 
+  // Cerrar menús cuando se hace clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      
+      // Cerrar menú de usuario
+      if (isUserMenuOpen && !target.closest('[data-user-menu]')) {
+        setIsUserMenuOpen(false);
+      }
+      
+      // Cerrar menú de notificaciones
+      if (isNotificationOpen && !target.closest('[data-notification-menu]')) {
+        setIsNotificationOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isUserMenuOpen, isNotificationOpen]);
+
+  // Cerrar menús cuando se navega
+  useEffect(() => {
+    setIsUserMenuOpen(false);
+    setIsNotificationOpen(false);
+  }, [pathname]);
+
   // Handle logo error
   const handleLogoError = () => {
     setLogoError(true);
@@ -89,7 +115,11 @@ const TopBar: React.FC<TopBarProps> = ({
       'incidents': 'Incidentes',
       'reports': 'Reportes',
       'settings': 'Configuración',
-      'profile': 'Perfil'
+      'profile': 'Perfil',
+      'admin': 'Admin',
+      'categories': 'Categorías',
+      'classrooms': 'Aulas',
+      'templates': 'Plantillas'
     };
 
     const breadcrumbs: BreadcrumbItem[] = [
@@ -234,14 +264,18 @@ const TopBar: React.FC<TopBarProps> = ({
 
   // Handle mobile menu toggle with proper callback
   const handleMobileMenuToggle = () => {
-    console.log('Mobile menu toggle clicked', { current: isMobileMenuOpen });
+    console.log('[TopBar] Mobile menu toggle clicked', { 
+      current: isMobileMenuOpen, 
+      hasCallback: !!onMobileMenuToggle 
+    });
+    
     if (onMobileMenuToggle) {
       onMobileMenuToggle();
     }
   };
 
   return (
-    <header className="h-16 bg-white border-b border-gray-200 shadow-sm">
+    <header className="h-16 bg-white border-b border-gray-200 shadow-sm relative z-30">
       <div className="flex items-center justify-between h-full px-4 lg:px-6">
 
         {/* Left Section */}
@@ -314,7 +348,7 @@ const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         {/* Center - Quick Actions */}
-        <div className="hidden md:flex items-center space-x-4">
+        <div className="hidden lg:flex items-center space-x-4">
           <div className="flex items-center space-x-2 bg-gradient-to-r from-blue-50 to-indigo-50 px-3 py-2 rounded-lg border border-blue-100">
             <Activity className="w-4 h-4 text-blue-600" />
             <span className="text-sm font-medium text-blue-700">Sistema Activo</span>
@@ -330,10 +364,11 @@ const TopBar: React.FC<TopBarProps> = ({
         <div className="flex items-center space-x-3">
 
           {/* Notifications */}
-          <div className="relative">
+          <div className="relative" data-notification-menu>
             <button
               onClick={handleNotificationToggle}
-              className="relative p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+              className="relative p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+              aria-label="Notificaciones"
             >
               <Bell size={20} />
               {unreadCount > 0 && (
@@ -360,11 +395,13 @@ const TopBar: React.FC<TopBarProps> = ({
                 <div className="max-h-96 overflow-y-auto">
                   {isLoadingIncidents ? (
                     <div className="p-4 text-center text-gray-500">
-                      Cargando notificaciones...
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
+                      <p className="mt-2">Cargando notificaciones...</p>
                     </div>
                   ) : incidents.length === 0 ? (
                     <div className="p-4 text-center text-gray-500">
-                      No hay notificaciones
+                      <Bell className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                      <p>No hay notificaciones</p>
                     </div>
                   ) : (
                     incidents.map((incident) => {
@@ -376,13 +413,19 @@ const TopBar: React.FC<TopBarProps> = ({
                           key={incident.id}
                           className={`p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors
                                       ${isUnread ? 'bg-blue-50' : ''}`}
+                          onClick={() => {
+                            if (router) {
+                              router.push(`/incidents/${incident.id}`);
+                              setIsNotificationOpen(false);
+                            }
+                          }}
                         >
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <h4 className={`text-sm font-medium ${isUnread ? 'text-gray-900' : 'text-gray-700'}`}>
                                 {getIncidentTitle(incident)}
                               </h4>
-                              <p className="text-sm text-gray-600 mt-1">
+                              <p className="text-sm text-gray-600 mt-1 line-clamp-2">
                                 {incident.description}
                               </p>
                               <p className="text-xs text-gray-400 mt-2">
@@ -390,7 +433,7 @@ const TopBar: React.FC<TopBarProps> = ({
                               </p>
                             </div>
                             {isUnread && (
-                              <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 ml-2"></div>
+                              <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 ml-2 flex-shrink-0"></div>
                             )}
                           </div>
                         </div>
@@ -399,7 +442,15 @@ const TopBar: React.FC<TopBarProps> = ({
                   )}
                 </div>
                 <div className="p-3 border-t border-gray-200">
-                  <button className="w-full text-center text-sm text-blue-600 hover:text-blue-700 font-medium">
+                  <button 
+                    onClick={() => {
+                      if (router) {
+                        router.push('/incidents');
+                        setIsNotificationOpen(false);
+                      }
+                    }}
+                    className="w-full text-center text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors"
+                  >
                     Ver todos los incidentes
                   </button>
                 </div>
@@ -408,11 +459,12 @@ const TopBar: React.FC<TopBarProps> = ({
           </div>
 
           {/* User Menu */}
-          <div className="relative">
+          <div className="relative" data-user-menu>
             <button
               onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-              className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={isLoadingUser}
+              aria-label="Menú de usuario"
             >
               <div className="flex items-center space-x-3">
                 {/* Avatar */}
@@ -439,8 +491,13 @@ const TopBar: React.FC<TopBarProps> = ({
                     </div>
                   ) : user ? (
                     <>
-                      <p className="text-sm font-medium text-gray-900">{user.full_name}</p>
-                      <p className="text-xs text-gray-500 capitalize">{user.status}</p>
+                      <p className="text-sm font-medium text-gray-900 truncate max-w-[120px]">
+                        {user.full_name}
+                      </p>
+                      <p className="text-xs text-gray-500 capitalize">
+                        {user.status === 'active' ? 'Activo' : 
+                         user.status === 'pending' ? 'Pendiente' : 'Inactivo'}
+                      </p>
                     </>
                   ) : (
                     <>
@@ -450,19 +507,35 @@ const TopBar: React.FC<TopBarProps> = ({
                   )}
                 </div>
               </div>
-              <ChevronDown size={16} className="text-gray-400 hidden sm:block" />
+              <ChevronDown 
+                size={16} 
+                className={`text-gray-400 hidden sm:block transition-transform duration-200 ${
+                  isUserMenuOpen ? 'rotate-180' : ''
+                }`} 
+              />
             </button>
 
             {/* User Dropdown */}
             {isUserMenuOpen && user && (
               <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
                 <div className="p-4 border-b border-gray-200">
-                  <p className="text-sm font-medium text-gray-900">{user.full_name}</p>
-                  <p className="text-xs text-gray-500">{user.email}</p>
-                  <p className="text-xs text-gray-400 mt-1 capitalize">Estado: {user.status}</p>
+                  <p className="text-sm font-medium text-gray-900 truncate">{user.full_name}</p>
+                  <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                  <p className="text-xs text-gray-400 mt-1 capitalize">
+                    Estado: {user.status === 'active' ? 'Activo' : 
+                            user.status === 'pending' ? 'Pendiente' : 'Inactivo'}
+                  </p>
                 </div>
                 <div className="py-2">
-                  <button className="w-full flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+                  <button 
+                    onClick={() => {
+                      if (router) {
+                        router.push('/profile');
+                        setIsUserMenuOpen(false);
+                      }
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                  >
                     <User size={16} />
                     <span>Mi Perfil</span>
                   </button>
