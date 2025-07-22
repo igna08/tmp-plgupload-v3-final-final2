@@ -51,9 +51,9 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
       <div className="flex items-center justify-center h-screen bg-neutralLighter">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-lg text-neutralDark">Loading authentication...</p>
+          <p className="text-lg text-neutralDark">Cargando autenticación...</p>
           <p className="text-sm text-neutralTextSecondary mt-2">
-            Token: {token ? 'Present' : 'None'} | User: {user ? 'Loaded' : 'None'}
+            Token: {token ? 'Presente' : 'Ninguno'} | Usuario: {user ? 'Cargado' : 'Ninguno'}
           </p>
         </div>
       </div>
@@ -65,9 +65,9 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
       <div className="flex items-center justify-center h-screen bg-neutralLighter">
         <div className="text-center">
           <div className="animate-pulse rounded-full h-12 w-12 bg-gray-300 mx-auto mb-4"></div>
-          <p className="text-lg text-neutralDark">Redirecting to login...</p>
+          <p className="text-lg text-neutralDark">Redirigiendo al login...</p>
           <p className="text-sm text-neutralTextSecondary mt-2">
-            No authentication token found
+            No se encontró token de autenticación
           </p>
         </div>
       </div>
@@ -79,9 +79,9 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
       <div className="flex items-center justify-center h-screen bg-neutralLighter">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
-          <p className="text-lg text-neutralDark">Loading user data...</p>
+          <p className="text-lg text-neutralDark">Cargando datos del usuario...</p>
           <p className="text-sm text-neutralTextSecondary mt-2">
-            Authentication verified, fetching profile...
+            Autenticación verificada, obteniendo perfil...
           </p>
         </div>
       </div>
