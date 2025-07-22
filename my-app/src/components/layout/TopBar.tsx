@@ -298,7 +298,7 @@ const TopBar: React.FC<TopBarProps> = ({
           <div className="flex items-center md:hidden">
             {!logoError ? (
               <img
-                src="https://app-web-final-qr.vercel.app/logo.png"
+                src="https://app-web-final-qr.vercel.app/issa.png"
                 alt="Logo del Sistema"
                 className="h-8 w-auto max-w-[120px] object-contain"
                 onError={handleLogoError}
