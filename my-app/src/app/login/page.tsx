@@ -227,7 +227,7 @@ const LoginForm: React.FC = () => {
           <div className="mx-auto mb-6 flex justify-center">
             {!logoError ? (
               <img
-                src="https://app-web-final-qr.vercel.app/logo.png"
+                src="https://app-web-final-qr.vercel.app/issa.png"
                 alt="Logo del Sistema"
                 className="h-24 w-auto max-w-full"
                 onError={handleLogoError}
