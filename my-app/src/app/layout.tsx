@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Scanly",
+  title: "ISSA - Sistema de Gestión de QR Escolar",
   description: "Sistema de gestión de QR Escolar",
 };
 

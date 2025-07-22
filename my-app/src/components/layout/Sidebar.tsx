@@ -191,7 +191,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onMobileClose, currentP
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 md:justify-center">
           <div className="flex items-center justify-center">
             <img 
-              src="/logo.png" 
+              src="/issa.png" 
               alt="Scanly Logo" 
               className="h-10 w-auto object-contain"
             />
