@@ -8,7 +8,11 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
-const PUBLIC_ROUTES = ['/auth/register/invitation']; // Podés agregar más rutas públicas aquí
+const PUBLIC_ROUTES = [
+  '/auth/register/invitation',
+  '/public', // Nueva ruta pública agregada
+  // Podés agregar más rutas públicas aquí
+];
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { token, user, isLoading } = useAuth();
@@ -30,6 +34,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
       hasUser: !!user,
       isLoading,
       shouldRedirect,
+      isPublicRoute, // Agregado para debug
     });
 
     if (!isLoading && !isPublicRoute) {
@@ -43,10 +48,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
         debugLog('Token exists, access granted');
         setShouldRedirect(false);
       }
+    } else if (isPublicRoute) {
+      debugLog('Public route accessed, no authentication required');
     }
   }, [token, isLoading, pathname, router, isPublicRoute]);
 
-  if (isLoading) {
+  if (isLoading && !isPublicRoute) {
     return (
       <div className="flex items-center justify-center h-screen bg-neutralLighter">
         <div className="text-center">
@@ -88,7 +95,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     );
   }
 
-  debugLog('Rendering protected content');
+  debugLog('Rendering content', { isPublic: isPublicRoute });
   return <>{children}</>;
 };
 
