@@ -10,8 +10,18 @@ interface ProtectedRouteProps {
 
 const PUBLIC_ROUTES = [
   '/auth/register/invitation',
-  '/public', // Nueva ruta pública agregada
+  '/public', // Rutas que empiecen con /public
   // Podés agregar más rutas públicas aquí
+];
+
+// Archivos estáticos y rutas especiales que no deben ser protegidos
+const STATIC_FILES_PATTERNS = [
+  '/.well-known', // Para archivos como assetlinks.json, apple-app-site-association, etc.
+  '/favicon.ico',
+  '/robots.txt',
+  '/sitemap.xml',
+  '/manifest.json',
+  // Agrega más patrones según necesites
 ];
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
@@ -20,8 +30,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const pathname = usePathname();
   const [shouldRedirect, setShouldRedirect] = useState(false);
 
-  // Verifica si es una ruta pública
-  const isPublicRoute = PUBLIC_ROUTES.some((route) => pathname?.startsWith(route));
+  // Verifica si es una ruta pública o archivo estático
+  const isPublicRoute = PUBLIC_ROUTES.some((route) => pathname?.startsWith(route)) ||
+                       STATIC_FILES_PATTERNS.some((pattern) => pathname?.includes(pattern)) ||
+                       pathname?.includes('.json') || // Para archivos JSON específicos
+                       pathname?.includes('.xml') ||  // Para archivos XML
+                       pathname?.includes('.txt');    // Para archivos de texto
 
   const debugLog = (message: string, data?: any) => {
     console.log(`[ProtectedRoute] ${message}`, data || '');
