@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.example.issa_app",
+      "sha256_cert_fingerprints": [
+        "B2:4E:9C:1F:56:45:21:53:72:F9:94:DE:DF:85:F4:CC:8F:D6:AA:7B:3F:83:93:3A:D9:41:6B:1B:71:A7:3E:1E"
+      ]
+    }
+  }
+]
