@@ -74,15 +74,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setError(null);
   }, []);
 
-  // Función para transformar la respuesta de la API al formato esperado
-  const transformUserData = (apiUser: any): User => {
-    return {
-      ...apiUser,
-      is_active: apiUser.status === 'active',
-      is_superuser: apiUser.roles?.super_admin || false
-    };
-  };
+// Reemplaza la función transformUserData en tu AuthContext con esta versión corregida:
 
+const transformUserData = (apiUser: any): User => {
+  console.log('=== TRANSFORM USER DATA DEBUG ===');
+  console.log('Raw API User:', apiUser);
+  console.log('apiUser.is_superuser:', apiUser.is_superuser);
+  console.log('apiUser.roles?.super_admin:', apiUser.roles?.super_admin);
+  
+  const transformed = {
+    ...apiUser,
+    is_active: apiUser.status === 'active',
+    // Priorizar is_superuser directo, si no existe, usar roles.super_admin
+    is_superuser: apiUser.is_superuser !== undefined 
+      ? apiUser.is_superuser 
+      : (apiUser.roles?.super_admin || false)
+  };
+  
+  console.log('Transformed User:', transformed);
+  console.log('Final is_superuser:', transformed.is_superuser);
+  console.log('================================');
+  
+  return transformed;
+};
   // Función para limpiar el estado de autenticación
   const clearAuthState = useCallback(() => {
     debugLog('Clearing auth state');
