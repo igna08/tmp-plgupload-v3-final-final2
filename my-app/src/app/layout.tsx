@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import AppLayout from "@/components/layout/AppLayout";
 import { AuthProvider } from "@/context/AuthContext"; // Added AuthProvider import
-
+import FloatingAssetButton from '@/components/layout/FloatingAssetButton';
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -31,6 +31,8 @@ export default function RootLayout({
       >
         <AuthProvider>
           <AppLayout>{children}</AppLayout>
+          <FloatingAssetButton />
+
         </AuthProvider>
       </body>
     </html>
