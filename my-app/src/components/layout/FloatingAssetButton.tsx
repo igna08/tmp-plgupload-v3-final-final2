@@ -302,125 +302,214 @@ const [qrDetector, setQrDetector] = useState<typeof jsQR | null>(null);
     }
   };
 
-  // Funciones de cámara
-  const startCamera = async () => {
-    try {
-      setError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        } 
-      });
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        setCurrentView('camera');
-      }
-    } catch (err: any) {
-      setError('No se pudo acceder a la cámara. Verifique los permisos.');
+// Funciones de cámara corregidas
+const startCamera = async () => {
+  try {
+    setError(null);
+    setLoading(true);
+    
+    // Verificar si getUserMedia está disponible
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('La cámara no es compatible con este navegador');
     }
-  };
 
-  const capturePhoto = () => {
-    if (videoRef.current && canvasRef.current) {
-      const canvas = canvasRef.current;
-      const video = videoRef.current;
-      const context = canvas.getContext('2d');
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      video: { 
+        facingMode: 'environment',
+        width: { ideal: 1280, min: 640 },
+        height: { ideal: 720, min: 480 }
+      } 
+    });
+    
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
       
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      
-      if (context) {
-        context.drawImage(video, 0, 0);
-        const imageData = canvas.toDataURL('image/jpeg', 0.8);
-        setCapturedImage(imageData);
-        stopCamera();
-        setCurrentView('form');
-      }
+      // Esperar a que el video esté listo
+      videoRef.current.onloadedmetadata = () => {
+        videoRef.current?.play().then(() => {
+          setCurrentView('camera');
+          setLoading(false);
+        }).catch((playError) => {
+          console.error('Error al reproducir video:', playError);
+          setError('Error al iniciar la vista de cámara');
+          setLoading(false);
+        });
+      };
+
+      // Timeout de seguridad
+      setTimeout(() => {
+        if (loading) {
+          setLoading(false);
+          setCurrentView('camera');
+        }
+      }, 3000);
     }
-  };
+  } catch (err) {
+    console.error('Error al acceder a la cámara:', err);
+    setError('No se pudo acceder a la cámara. Verifique los permisos del navegador.');
+    setLoading(false);
+  }
+};
 
-  const stopCamera = () => {
+const capturePhoto = () => {
+  if (!videoRef.current || !canvasRef.current) {
+    setError('Error: elementos de cámara no disponibles');
+    return;
+  }
+
+  const video = videoRef.current;
+  const canvas = canvasRef.current;
+  const context = canvas.getContext('2d');
+  
+  if (!context) {
+    setError('Error al procesar la imagen');
+    return;
+  }
+
+  // Verificar que el video tenga dimensiones válidas
+  if (video.videoWidth === 0 || video.videoHeight === 0) {
+    setError('La cámara aún no está lista. Intente nuevamente.');
+    return;
+  }
+  
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  
+  try {
+    context.drawImage(video, 0, 0);
+    const imageData = canvas.toDataURL('image/jpeg', 0.8);
+    
+    if (imageData && imageData !== 'data:,') {
+      setCapturedImage(imageData);
+      stopCamera();
+      setCurrentView('form');
+      setSuccess('Foto capturada correctamente');
+    } else {
+      setError('Error al capturar la imagen. Intente nuevamente.');
+    }
+  } catch (captureError) {
+    console.error('Error al capturar foto:', captureError);
+    setError('Error al procesar la imagen capturada');
+  }
+};
+
+const stopCamera = () => {
+  try {
     if (videoRef.current?.srcObject) {
       const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-      tracks.forEach(track => track.stop());
+      tracks.forEach(track => {
+        track.stop();
+        console.log('Track stopped:', track.kind);
+      });
       videoRef.current.srcObject = null;
     }
     
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
     }
     
     setIsScanning(false);
-  };
+  } catch (error) {
+    console.error('Error al detener la cámara:', error);
+  }
+};
 
-  // Funciones de QR Scanner
-  const startQRScanner = async () => {
-    try {
-      setError(null);
-      setScannedData(null);
-      setIsScanning(true);
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        } 
-      });
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        setCurrentView('scan');
-        scanQRCode();
-      }
-    } catch (err: any) {
-      setError('No se pudo acceder a la cámara para escanear');
-      setIsScanning(false);
+// Función QR Scanner corregida
+const startQRScanner = async () => {
+  try {
+    setError(null);
+    setScannedData(null);
+    setIsScanning(true);
+    setLoading(true);
+    
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('La cámara no es compatible con este navegador');
     }
-  };
-
-  const scanQRCode = () => {
-    if (!isScanning || !videoRef.current || !scanCanvasRef.current) return;
-
-    const video = videoRef.current;
-    const canvas = scanCanvasRef.current;
-    const context = canvas.getContext('2d');
-
-    if (video.readyState === video.HAVE_ENOUGH_DATA && context) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+    
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      video: { 
+        facingMode: 'environment',
+        width: { ideal: 1280, min: 640 },
+        height: { ideal: 720, min: 480 }
+      } 
+    });
+    
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
       
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      
-      if (qrDetector) {
-        try {
-          const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-const code = jsQR(imageData.data, imageData.width, imageData.height);
-          
-          if (code && code.data) {
-            setIsScanning(false);
-            stopCamera();
-            
-            const qrId = code.data;
-            getAssetByQR(qrId);
-            return;
-          }
-        } catch (err) {
-          // Continuar escaneando
+      videoRef.current.onloadedmetadata = () => {
+        videoRef.current?.play().then(() => {
+          setCurrentView('scan');
+          setLoading(false);
+          // Iniciar el escaneo después de un pequeño delay
+          setTimeout(() => {
+            scanQRCode();
+          }, 500);
+        }).catch((playError) => {
+          console.error('Error al reproducir video:', playError);
+          setError('Error al iniciar la vista de escaneo');
+          setLoading(false);
+          setIsScanning(false);
+        });
+      };
+
+      // Timeout de seguridad
+      setTimeout(() => {
+        if (loading) {
+          setLoading(false);
+          setCurrentView('scan');
+          scanQRCode();
         }
+      }, 3000);
+    }
+  } catch (err) {
+    console.error('Error al acceder a la cámara para escanear:', err);
+    setError('No se pudo acceder a la cámara para escanear. Verifique los permisos.');
+    setLoading(false);
+    setIsScanning(false);
+  }
+};
+
+const scanQRCode = () => {
+  if (!isScanning || !videoRef.current || !scanCanvasRef.current) {
+    return;
+  }
+
+  const video = videoRef.current;
+  const canvas = scanCanvasRef.current;
+  const context = canvas.getContext('2d');
+
+  if (video.readyState === video.HAVE_ENOUGH_DATA && context && video.videoWidth > 0) {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    try {
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      
+      // Usar jsQR directamente ya que está importado
+      const code = jsQR(imageData.data, imageData.width, imageData.height);
+      
+      if (code && code.data) {
+        console.log('QR detectado:', code.data);
+        setIsScanning(false);
+        stopCamera();
+        
+        // Extraer ID del QR (asumiendo que el QR contiene directamente el ID)
+        const qrId = code.data;
+        getAssetByQR(qrId);
+        return;
       }
+    } catch (err) {
+      console.error('Error en detección QR:', err);
     }
+  }
 
-    if (isScanning) {
-      animationRef.current = requestAnimationFrame(scanQRCode);
-    }
-  };
-
+  if (isScanning) {
+    animationRef.current = requestAnimationFrame(scanQRCode);
+  }
+};
   // Funciones de Bluetooth e impresión
   const connectBluetoothPrinter = async () => {
     try {
@@ -728,45 +817,54 @@ await printerCharacteristic.writeValue(new Uint8Array(printData));
           </div>
         );
 
-      case 'camera':
-        return (
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-xl font-bold text-gray-900">Capturar Foto</h3>
-              <p className="text-sm text-gray-600">Posiciona el activo en el centro del marco</p>
-            </div>
+case 'camera':
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-xl font-bold text-gray-900">Capturar Foto</h3>
+        <p className="text-sm text-gray-600">Posiciona el activo en el centro del marco</p>
+      </div>
+      
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-20 space-y-4">
+          <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
+          <p className="text-gray-600">Inicializando cámara...</p>
+          <p className="text-sm text-gray-500">Por favor, permite el acceso a la cámara</p>
+        </div>
+      ) : (
+        <>
+          <div className="relative overflow-hidden rounded-xl bg-black">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-80 object-cover"
+            />
             
-            <div className="relative overflow-hidden rounded-xl bg-black">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-80 object-cover"
-              />
-              
-              <div className="absolute inset-0 pointer-events-none">
-                <div className="absolute inset-4 border-2 border-white border-dashed rounded-lg opacity-50"></div>
-                <div className="absolute top-4 left-4 right-4 text-center">
-                  <span className="bg-black bg-opacity-50 text-white px-3 py-1 rounded-full text-sm">
-                    Centra el objeto aquí
-                  </span>
-                </div>
+            <div className="absolute inset-0 pointer-events-none">
+              <div className="absolute inset-4 border-2 border-white border-dashed rounded-lg opacity-50"></div>
+              <div className="absolute top-4 left-4 right-4 text-center">
+                <span className="bg-black bg-opacity-50 text-white px-3 py-1 rounded-full text-sm">
+                  Centra el objeto aquí
+                </span>
               </div>
-              
-              <canvas ref={canvasRef} className="hidden" />
             </div>
             
-            <button
-              onClick={capturePhoto}
-              className="w-full flex items-center justify-center space-x-3 p-4 bg-white border-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all duration-200 font-semibold"
-            >
-              <Camera className="h-6 w-6" />
-              <span>Capturar Foto</span>
-            </button>
+            <canvas ref={canvasRef} className="hidden" />
           </div>
-        );
-
+          
+          <button
+            onClick={capturePhoto}
+            className="w-full flex items-center justify-center space-x-3 p-4 bg-white border-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all duration-200 font-semibold"
+          >
+            <Camera className="h-6 w-6" />
+            <span>Capturar Foto</span>
+          </button>
+        </>
+      )}
+    </div>
+  );
       case 'form':
         return (
           <div className="space-y-6">
@@ -960,134 +1058,140 @@ await printerCharacteristic.writeValue(new Uint8Array(printData));
           </div>
         );
 
-      case 'scan':
-        return (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-xl font-bold text-gray-900">Escanear Código QR</h3>
-              <p className="text-sm text-gray-600">Apunta la cámara hacia el código QR</p>
+case 'scan':
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-xl font-bold text-gray-900">Escanear Código QR</h3>
+        <p className="text-sm text-gray-600">Apunta la cámara hacia el código QR</p>
+      </div>
+      
+      {scannedData ? (
+        <div className="space-y-4">
+          <div className="p-4 bg-green-50 border-2 border-green-200 rounded-xl">
+            <div className="flex items-center space-x-2 mb-3">
+              <Check className="h-5 w-5 text-green-600" />
+              <h4 className="font-semibold text-green-800">Activo Encontrado</h4>
             </div>
             
-            {scannedData ? (
-              <div className="space-y-4">
-                <div className="p-4 bg-green-50 border-2 border-green-200 rounded-xl">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <Check className="h-5 w-5 text-green-600" />
-                    <h4 className="font-semibold text-green-800">Activo Encontrado</h4>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-xs font-medium text-green-700 uppercase">Nombre</p>
-                        <p className="text-sm text-green-900 font-semibold">{scannedData.template?.name}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-medium text-green-700 uppercase">Estado</p>
-                        <p className="text-sm text-green-900 font-semibold capitalize">{scannedData.status}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-xs font-medium text-green-700 uppercase">Serie</p>
-                        <p className="text-sm text-green-900 font-mono">{scannedData.serial_number}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-medium text-green-700 uppercase">Fabricante</p>
-                        <p className="text-sm text-green-900">{scannedData.template?.manufacturer}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-xs font-medium text-green-700 uppercase">Modelo</p>
-                        <p className="text-sm text-green-900">{scannedData.template?.model_number}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-medium text-green-700 uppercase">Valor</p>
-                        <p className="text-sm text-green-900 font-semibold">${scannedData.value_estimate}</p>
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="text-xs font-medium text-green-700 uppercase">Fecha de Compra</p>
-                      <p className="text-sm text-green-900">{new Date(scannedData.purchase_date).toLocaleDateString()}</p>
-                    </div>
-                  </div>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-medium text-green-700 uppercase">Nombre</p>
+                  <p className="text-sm text-green-900 font-semibold">{scannedData.template?.name}</p>
                 </div>
-                
-                {scannedData.image_url && (
-                  <div className="rounded-xl overflow-hidden border-2 border-gray-200">
-                    <img
-                      src={scannedData.image_url}
-                      alt="Imagen del activo"
-                      className="w-full h-48 object-cover"
-                    />
-                  </div>
-                )}
-
-                <button
-                  onClick={() => {
-                    setScannedData(null);
-                    startQRScanner();
-                  }}
-                  className="w-full flex items-center justify-center space-x-2 p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all duration-200 font-semibold"
-                >
-                  <QrCode className="h-5 w-5" />
-                  <span>Escanear Otro Código</span>
-                </button>
+                <div>
+                  <p className="text-xs font-medium text-green-700 uppercase">Estado</p>
+                  <p className="text-sm text-green-900 font-semibold capitalize">{scannedData.status}</p>
+                </div>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="relative overflow-hidden rounded-xl bg-black">
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-80 object-cover"
-                  />
-                  
-                  {isScanning && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="relative">
-                        <div className="w-64 h-64 border-2 border-white rounded-2xl opacity-80">
-                          <div className="absolute -top-1 -left-1 w-8 h-8 border-l-4 border-t-4 border-blue-400 rounded-tl-lg"></div>
-                          <div className="absolute -top-1 -right-1 w-8 h-8 border-r-4 border-t-4 border-blue-400 rounded-tr-lg"></div>
-                          <div className="absolute -bottom-1 -left-1 w-8 h-8 border-l-4 border-b-4 border-blue-400 rounded-bl-lg"></div>
-                          <div className="absolute -bottom-1 -right-1 w-8 h-8 border-r-4 border-b-4 border-blue-400 rounded-br-lg"></div>
-                          
-                          <div className="absolute inset-0 overflow-hidden rounded-2xl">
-                            <div className="absolute w-full h-1 bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-pulse"></div>
-                          </div>
-                        </div>
-                        
-                        <div className="absolute -bottom-12 left-1/2 transform -translate-x-1/2">
-                          <div className="bg-black bg-opacity-70 text-white px-4 py-2 rounded-full text-sm font-medium">
-                            <Scan className="inline h-4 w-4 mr-2 animate-pulse" />
-                            Escaneando QR...
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  <canvas ref={scanCanvasRef} className="hidden" />
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-medium text-green-700 uppercase">Serie</p>
+                  <p className="text-sm text-green-900 font-mono">{scannedData.serial_number}</p>
                 </div>
-                
-                <div className="text-center space-y-2">
-                  <p className="text-gray-600 text-sm">
-                    Posiciona el código QR dentro del marco
-                  </p>
-                  <p className="text-gray-500 text-xs">
-                    La detección es automática
-                  </p>
+                <div>
+                  <p className="text-xs font-medium text-green-700 uppercase">Fabricante</p>
+                  <p className="text-sm text-green-900">{scannedData.template?.manufacturer}</p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-medium text-green-700 uppercase">Modelo</p>
+                  <p className="text-sm text-green-900">{scannedData.template?.model_number}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-green-700 uppercase">Valor</p>
+                  <p className="text-sm text-green-900 font-semibold">${scannedData.value_estimate}</p>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-green-700 uppercase">Fecha de Compra</p>
+                <p className="text-sm text-green-900">{new Date(scannedData.purchase_date).toLocaleDateString()}</p>
+              </div>
+            </div>
+          </div>
+          
+          {scannedData.image_url && (
+            <div className="rounded-xl overflow-hidden border-2 border-gray-200">
+              <img
+                src={scannedData.image_url}
+                alt="Imagen del activo"
+                className="w-full h-48 object-cover"
+              />
+            </div>
+          )}
+
+          <button
+            onClick={() => {
+              setScannedData(null);
+              startQRScanner();
+            }}
+            className="w-full flex items-center justify-center space-x-2 p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all duration-200 font-semibold"
+          >
+            <QrCode className="h-5 w-5" />
+            <span>Escanear Otro Código</span>
+          </button>
+        </div>
+      ) : loading ? (
+        <div className="flex flex-col items-center justify-center py-20 space-y-4">
+          <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
+          <p className="text-gray-600">Inicializando escáner...</p>
+          <p className="text-sm text-gray-500">Preparando la cámara para escanear QR</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="relative overflow-hidden rounded-xl bg-black">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-80 object-cover"
+            />
+            
+            {isScanning && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="relative">
+                  <div className="w-64 h-64 border-2 border-white rounded-2xl opacity-80">
+                    <div className="absolute -top-1 -left-1 w-8 h-8 border-l-4 border-t-4 border-blue-400 rounded-tl-lg"></div>
+                    <div className="absolute -top-1 -right-1 w-8 h-8 border-r-4 border-t-4 border-blue-400 rounded-tr-lg"></div>
+                    <div className="absolute -bottom-1 -left-1 w-8 h-8 border-l-4 border-b-4 border-blue-400 rounded-bl-lg"></div>
+                    <div className="absolute -bottom-1 -right-1 w-8 h-8 border-r-4 border-b-4 border-blue-400 rounded-br-lg"></div>
+                    
+                    <div className="absolute inset-0 overflow-hidden rounded-2xl">
+                      <div className="absolute w-full h-1 bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-pulse"></div>
+                    </div>
+                  </div>
+                  
+                  <div className="absolute -bottom-12 left-1/2 transform -translate-x-1/2">
+                    <div className="bg-black bg-opacity-70 text-white px-4 py-2 rounded-full text-sm font-medium">
+                      <Scan className="inline h-4 w-4 mr-2 animate-pulse" />
+                      Escaneando QR...
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
+            
+            <canvas ref={scanCanvasRef} className="hidden" />
           </div>
-        );
+          
+          <div className="text-center space-y-2">
+            <p className="text-gray-600 text-sm">
+              Posiciona el código QR dentro del marco
+            </p>
+            <p className="text-gray-500 text-xs">
+              La detección es automática
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
       default:
         return null;
