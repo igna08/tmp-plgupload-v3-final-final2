@@ -455,41 +455,38 @@ const AssetCreatorFAB: React.FC = () => {
   };
 
   const printQR = async (): Promise<void> => {
-    if (!bluetoothPrinter || !qrData) {
+    if (!qrData) return;
+    
+    if (!bluetoothPrinter) {
       await connectBluetooth();
-      if (!bluetoothPrinter || !qrData) return;
+      if (!bluetoothPrinter) return;
     }
 
     try {
       setIsLoading(true);
 
-      // Create print commands for thermal printer using Uint8Array
-      const qrUrl = qrData?.qr_url ?? '';
-      const qrUrlBytes = new TextEncoder().encode(qrUrl);
-      const pL = (qrUrlBytes.length + 3) & 0xff;
-      const pH = ((qrUrlBytes.length + 3) >> 8) & 0xff;
+      // For thermal printers, we need to send the actual QR data or URL
+      // This is a simplified version - you might need to adjust based on your printer model
+      const printData = `
+${qrData.name}
+${qrData.school} - ${qrData.classroom}
+QR: ${qrData.qr_url}
 
-      // Build the command as a Uint8Array
+      `;
+
+      const encoder = new TextEncoder();
       const commands: number[] = [];
+      
       // Initialize printer
       commands.push(0x1B, 0x40);
       // Center align
       commands.push(0x1B, 0x61, 0x01);
-      // Print asset name
-      for (const c of (qrData?.name ?? '').split('')) commands.push(...new TextEncoder().encode(c));
-      commands.push(0x0A);
-      // Print school and classroom
-      for (const c of (`${qrData?.school ?? ''} - ${qrData?.classroom ?? ''}`).split('')) commands.push(...new TextEncoder().encode(c));
-      commands.push(0x0A);
-      // QR code: model 2, size 6
-      commands.push(0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00);
-      // Store QR data
-      commands.push(0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30, ...qrUrlBytes);
-      // Print QR code
-      commands.push(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30);
-      // Feed paper
+      
+      // Add the text data
+      commands.push(...encoder.encode(printData));
+      
+      // Feed paper and cut
       commands.push(0x0A, 0x0A, 0x0A);
-      // Cut paper
       commands.push(0x1B, 0x69);
 
       await bluetoothPrinter.characteristic.writeValue(new Uint8Array(commands));
@@ -503,38 +500,46 @@ const AssetCreatorFAB: React.FC = () => {
     }
   };
 
-  const downloadQR = (): void => {
-    if (!qrData) return;
+  const downloadQR = async (): Promise<void> => {
+    if (!qrData || !qrData.qr_url) return;
 
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    
-    if (!ctx) return;
-    
-    // Set canvas size
-    canvas.width = 300;
-    canvas.height = 350;
-    
-    // Draw white background
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // Create QR code placeholder (you'd use a QR library here)
-    ctx.fillStyle = 'black';
-    ctx.fillRect(50, 50, 200, 200);
-    
-    // Add text
-    ctx.fillStyle = 'black';
-    ctx.font = '16px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(qrData.name, 150, 280);
-    ctx.fillText(`${qrData.school} - ${qrData.classroom}`, 150, 300);
-    
-    // Download
-    const link = document.createElement('a');
-    link.download = `QR_${qrData.name}_${Date.now()}.png`;
-    link.href = canvas.toDataURL();
-    link.click();
+    try {
+      // If it's already a data URL, use it directly
+      if (qrData.qr_url.startsWith('data:')) {
+        const link = document.createElement('a');
+        link.download = `QR_${qrData.name}_${Date.now()}.png`;
+        link.href = qrData.qr_url;
+        link.click();
+        return;
+      }
+
+      // If it's a URL, fetch the image and convert to blob
+      const response = await fetch(qrData.qr_url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch QR image');
+      }
+      
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.download = `QR_${qrData.name}_${Date.now()}.png`;
+      link.href = url;
+      link.click();
+      
+      // Clean up the blob URL
+      URL.revokeObjectURL(url);
+      
+      setStatus({ type: 'success', message: 'QR descargado exitosamente' });
+    } catch (error) {
+      console.error('Error downloading QR:', error);
+      setStatus({ type: 'error', message: 'Error al descargar el QR' });
+    }
   };
 
   const resetForm = (): void => {
@@ -862,8 +867,24 @@ const AssetCreatorFAB: React.FC = () => {
                   </div>
 
                   <div className="bg-gray-100 p-4 rounded-lg">
-                    <div className="w-32 h-32 bg-white border-2 border-gray-300 mx-auto mb-3 flex items-center justify-center">
-                      <span className="text-xs text-gray-500">QR Code</span>
+                    <div className="w-32 h-32 bg-white border-2 border-gray-300 mx-auto mb-3 flex items-center justify-center overflow-hidden rounded-lg">
+                      {qrData.qr_url ? (
+                        <img 
+                          src={qrData.qr_url} 
+                          alt="QR Code" 
+                          className="w-full h-full object-contain"
+                          onError={(e) => {
+                            console.error('Error loading QR image:', qrData.qr_url);
+                            e.currentTarget.style.display = 'none';
+                            (e.currentTarget.nextElementSibling as HTMLElement)!.style.display = 'flex';
+                          }}
+                        />
+                      ) : null}
+                      <div className="w-full h-full flex items-center justify-center" style={{display: qrData.qr_url ? 'none' : 'flex'}}>
+                        <span className="text-xs text-gray-500 text-center">
+                          {qrData.qr_url ? 'Cargando QR...' : 'QR no disponible'}
+                        </span>
+                      </div>
                     </div>
                     <h4 className="font-medium">{qrData.name}</h4>
                     <p className="text-sm text-gray-600">{qrData.school} - {qrData.classroom}</p>
