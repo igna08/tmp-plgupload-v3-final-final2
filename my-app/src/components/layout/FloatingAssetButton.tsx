@@ -22,8 +22,6 @@ import {
   Scan
 } from 'lucide-react';
 
-// Efectos
-
 // Interfaces basadas en tu API
 interface Category {
   id: string;
@@ -104,6 +102,7 @@ const FloatingAssetButton: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [cameraReady, setCameraReady] = useState<boolean>(false);
   
   // Estados del formulario basado en tu API
   const [assetData, setAssetData] = useState<AssetData>({
@@ -116,13 +115,69 @@ const FloatingAssetButton: React.FC = () => {
     classroom_id: ''
   });
   
-  // Estados para datos de la API
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
-  const [schools, setSchools] = useState<School[]>([]);
+  // Estados para datos de la API (usando datos mock para demo)
+  const [categories] = useState<Category[]>([
+    { 
+      id: '1', 
+      name: 'Equipos de Cómputo', 
+      description: 'Computadoras y accesorios',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      templates: []
+    },
+    { 
+      id: '2', 
+      name: 'Mobiliario', 
+      description: 'Mesas, sillas y armarios',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      templates: []
+    }
+  ]);
+  
+  const [templates, setTemplates] = useState<Template[]>([
+    {
+      id: '1',
+      name: 'Laptop Dell',
+      description: 'Laptop corporativa',
+      manufacturer: 'Dell',
+      model_number: 'L3520',
+      category_id: '1',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      category: { id: '1', name: 'Equipos de Cómputo' }
+    },
+    {
+      id: '2',
+      name: 'Mesa de Trabajo',
+      description: 'Mesa de madera',
+      manufacturer: 'Mueblería XYZ',
+      model_number: 'MT-001',
+      category_id: '2',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      category: { id: '2', name: 'Mobiliario' }
+    }
+  ]);
+  
+  const [classrooms] = useState<Classroom[]>([
+    { id: '1', name: 'Aula 101', capacity: 30, school_id: '1' },
+    { id: '2', name: 'Aula 102', capacity: 25, school_id: '1' },
+    { id: '3', name: 'Laboratorio', capacity: 20, school_id: '1' }
+  ]);
+  
+  const [schools] = useState<School[]>([
+    {
+      id: '1',
+      name: 'Escuela Primaria Central',
+      address: 'Calle Principal 123',
+      description: 'Escuela pública',
+      logo_url: ''
+    }
+  ]);
+  
   const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [selectedSchool, setSelectedSchool] = useState<string>('');
+  const [selectedSchool, setSelectedSchool] = useState<string>('1');
   
   // Estados de QR y impresión
   const [qrData, setQrData] = useState<Asset | null>(null);
@@ -135,130 +190,154 @@ const FloatingAssetButton: React.FC = () => {
   const streamRef = useRef<MediaStream | null>(null);
   const qrScannerRef = useRef<HTMLVideoElement>(null);
 
-  // Configuración de la API
-  const API_BASE = 'https://finalqr-1-2-27-6-25.onrender.com/api';
-
-  // Efectos
+  // Cleanup effect
   useEffect(() => {
-    loadInitialData();
     return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
+      stopCamera();
     };
   }, []);
 
-  // Cargar datos iniciales de la API
-  const loadInitialData = async (): Promise<void> => {
-    try {
-      // Cargar categorías
-      const categoriesResponse = await fetch(`${API_BASE}/assets/categories/`);
-      if (categoriesResponse.ok) {
-        const categoriesData: Category[] = await categoriesResponse.json();
-        setCategories(categoriesData);
-      }
-
-      // Cargar escuelas
-      const schoolsResponse = await fetch(`${API_BASE}/schools/`);
-      if (schoolsResponse.ok) {
-        const schoolsData: School[] = await schoolsResponse.json();
-        setSchools(schoolsData);
-        if (schoolsData.length > 0) {
-          setSelectedSchool(schoolsData[0].id);
-          await loadClassroomsBySchool(schoolsData[0].id);
-        }
-      }
-    } catch (err) {
-      console.error('Error cargando datos iniciales:', err);
-      setError('Error cargando datos iniciales');
-    }
-  };
-
-  // Cargar aulas por escuela
-  const loadClassroomsBySchool = async (schoolId: string): Promise<void> => {
-    try {
-      const response = await fetch(`${API_BASE}/schools/${schoolId}/classrooms/`);
-      if (response.ok) {
-        const classroomsData: Classroom[] = await response.json();
-        setClassrooms(classroomsData);
-      }
-    } catch (err) {
-      console.error('Error cargando aulas:', err);
-      setError('Error cargando aulas');
-    }
-  };
-
-  // Cargar templates por categoría
-  const loadTemplatesByCategory = async (categoryId: string): Promise<void> => {
-    try {
-      const response = await fetch(`${API_BASE}/assets/templates/by_category/${categoryId}`);
-      if (response.ok) {
-        const templatesData: Template[] = await response.json();
-        setTemplates(templatesData);
-      }
-    } catch (err) {
-      console.error('Error cargando templates:', err);
-      setError('Error cargando plantillas');
-    }
-  };
-
-  // Funciones de cámara
+  // Funciones de cámara mejoradas
   const startCamera = async (): Promise<void> => {
     try {
       setError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({
+      setIsLoading(true);
+      setCameraReady(false);
+      
+      // Detener cualquier stream previo
+      stopCamera();
+      
+      console.log('Solicitando acceso a la cámara...');
+      
+      const constraints = {
         video: { 
-          facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280, min: 640 },
+          height: { ideal: 720, min: 480 }
         }
-      });
+      };
+      
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log('Stream obtenido:', stream);
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
+        
+        // Esperar a que el video esté listo
+        videoRef.current.onloadedmetadata = () => {
+          console.log('Video metadata cargada');
+          setCameraReady(true);
+          setIsLoading(false);
+        };
+        
+        videoRef.current.oncanplay = () => {
+          console.log('Video puede reproducirse');
+          setCameraReady(true);
+          setIsLoading(false);
+        };
+        
+        // Timeout de seguridad
+        setTimeout(() => {
+          if (!cameraReady) {
+            console.log('Activando cámara por timeout');
+            setCameraReady(true);
+            setIsLoading(false);
+          }
+        }, 3000);
       }
+      
       setCurrentStep('camera');
     } catch (err) {
+      console.error('Error al acceder a la cámara:', err);
       const errorMsg = err instanceof Error ? err.message : 'Error desconocido';
-      setError('No se pudo acceder a la cámara: ' + errorMsg);
+      setError(`No se pudo acceder a la cámara: ${errorMsg}`);
+      setIsLoading(false);
+      setCameraReady(false);
     }
   };
 
   const stopCamera = (): void => {
+    console.log('Deteniendo cámara...');
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log('Track detenido:', track.kind);
+      });
       streamRef.current = null;
     }
+    
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    
+    setCameraReady(false);
   };
 
   const capturePhoto = (): void => {
-    if (!videoRef.current || !canvasRef.current) return;
+    console.log('Capturando foto...');
+    
+    if (!videoRef.current || !canvasRef.current) {
+      setError('Error: Referencias de video o canvas no disponibles');
+      return;
+    }
+    
+    if (!cameraReady) {
+      setError('La cámara no está lista. Por favor espere.');
+      return;
+    }
     
     const video = videoRef.current;
     const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
     
-    if (!context) return;
+    if (!context) {
+      setError('Error al obtener contexto del canvas');
+      return;
+    }
     
+    // Verificar que el video tiene dimensiones válidas
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      setError('El video no tiene dimensiones válidas. Intente nuevamente.');
+      return;
+    }
+    
+    console.log('Dimensiones del video:', video.videoWidth, 'x', video.videoHeight);
+    
+    // Configurar canvas con las dimensiones del video
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     
+    // Dibujar el frame actual del video en el canvas
     context.drawImage(video, 0, 0);
     
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        setCapturedImage(result);
-        setAssetData(prev => ({ ...prev, image_url: result }));
-        setCurrentStep('form');
-        stopCamera();
-      };
-      reader.readAsDataURL(blob);
-    }, 'image/jpeg', 0.8);
+    try {
+      // Convertir a blob y luego a data URL
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          setError('Error al generar la imagen');
+          return;
+        }
+        
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          console.log('Foto capturada exitosamente');
+          setCapturedImage(result);
+          setAssetData(prev => ({ ...prev, image_url: result }));
+          setCurrentStep('form');
+          setSuccess('Foto capturada exitosamente');
+          stopCamera();
+        };
+        reader.onerror = () => {
+          setError('Error al procesar la imagen capturada');
+        };
+        reader.readAsDataURL(blob);
+      }, 'image/jpeg', 0.8);
+    } catch (err) {
+      console.error('Error al capturar foto:', err);
+      setError('Error al procesar la imagen');
+    }
   };
 
   // Funciones del formulario
@@ -273,20 +352,14 @@ const FloatingAssetButton: React.FC = () => {
   const handleCategoryChange = (categoryId: string): void => {
     setSelectedCategory(categoryId);
     setAssetData(prev => ({ ...prev, template_id: '' }));
-    if (categoryId) {
-      loadTemplatesByCategory(categoryId);
-    }
   };
 
   const handleSchoolChange = (schoolId: string): void => {
     setSelectedSchool(schoolId);
     setAssetData(prev => ({ ...prev, classroom_id: '' }));
-    if (schoolId) {
-      loadClassroomsBySchool(schoolId);
-    }
   };
 
-  // Crear activo usando la API
+  // Crear activo (simulado)
   const createAsset = async (): Promise<void> => {
     if (!assetData.template_id || !assetData.classroom_id) {
       setError('Por favor complete todos los campos requeridos');
@@ -297,64 +370,33 @@ const FloatingAssetButton: React.FC = () => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE}/assets/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(assetData)
-      });
-
-      if (!response.ok) {
-        throw new Error('Error al crear el activo');
-      }
-
-      const newAsset: Asset = await response.json();
+      // Simular llamada a la API
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // El activo ya viene con QR code generado según tu API
-      if (newAsset.qr_code) {
-        setQrData(newAsset);
-        setSuccess('¡Activo creado exitosamente!');
-        setCurrentStep('qr-result');
-      } else {
-        // Generar QR si no viene incluido
-        await generateQRCode(newAsset.id);
-      }
+      const selectedTemplate = templates.find(t => t.id === assetData.template_id);
+      
+      const newAsset: Asset = {
+        ...assetData,
+        id: Date.now().toString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        template: selectedTemplate!,
+        qr_code: {
+          id: 'qr-' + Date.now(),
+          asset_id: Date.now().toString(),
+          qr_url: `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="white"/><text x="100" y="100" text-anchor="middle" font-family="monospace" font-size="12">QR Code for Asset ${assetData.serial_number}</text></svg>`,
+          payload: { asset_id: Date.now().toString() }
+        }
+      };
+      
+      setQrData(newAsset);
+      setSuccess('¡Activo creado exitosamente!');
+      setCurrentStep('qr-result');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Error desconocido';
       setError('Error al crear el activo: ' + errorMsg);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // Generar código QR
-  const generateQRCode = async (assetId: string): Promise<void> => {
-    try {
-      const response = await fetch(`${API_BASE}/assets/${assetId}/qr-codes/`, {
-        method: 'POST'
-      });
-
-      if (!response.ok) {
-        throw new Error('Error al generar código QR');
-      }
-
-      const qrCode: QRCode = await response.json();
-      const assetWithQR: Asset = {
-        ...assetData,
-        id: assetId,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        template: templates.find(t => t.id === assetData.template_id)!,
-        qr_code: qrCode
-      };
-      
-      setQrData(assetWithQR);
-      setSuccess('¡Código QR generado exitosamente!');
-      setCurrentStep('qr-result');
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Error desconocido';
-      setError('Error al generar QR: ' + errorMsg);
     }
   };
 
@@ -386,18 +428,6 @@ const FloatingAssetButton: React.FC = () => {
     }
   };
 
-  // Imprimir QR
-  const printQR = async (): Promise<void> => {
-    if (printerStatus === 'connected' && bluetoothDevice && qrData) {
-      // Aquí implementarías la lógica específica de impresión
-      // Esto depende del protocolo de tu impresora térmica
-      setSuccess('Enviando a impresión...');
-    } else {
-      // Opción de descarga si no hay impresora
-      downloadQR();
-    }
-  };
-
   // Descargar QR
   const downloadQR = (): void => {
     if (!qrData?.qr_code?.qr_url) return;
@@ -406,51 +436,6 @@ const FloatingAssetButton: React.FC = () => {
     link.href = qrData.qr_code.qr_url;
     link.download = `qr-${qrData.serial_number || 'asset'}.png`;
     link.click();
-  };
-
-  // Escanear QR
-  const startQRScanner = async (): Promise<void> => {
-    try {
-      setError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }
-      });
-      
-      if (qrScannerRef.current) {
-        qrScannerRef.current.srcObject = stream;
-        streamRef.current = stream;
-      }
-      setCurrentStep('scanner');
-    } catch (err) {
-      setError('No se pudo acceder a la cámara para escanear');
-    }
-  };
-
-  // Buscar activo por QR (simulado - necesitarías una librería de QR scanner)
-  const handleQRScan = async (qrCodeId: string): Promise<void> => {
-    try {
-      setIsLoading(true);
-      const response = await fetch(`${API_BASE}/qr-codes/${qrCodeId}`);
-      
-      if (!response.ok) {
-        throw new Error('QR no encontrado');
-      }
-      
-      const qrCode: QRCode = await response.json();
-      
-      // Obtener datos del activo
-      const assetResponse = await fetch(`${API_BASE}/assets/${qrCode.asset_id}`);
-      if (assetResponse.ok) {
-        const asset: Asset = await assetResponse.json();
-        // Mostrar información del activo
-        setSuccess(`Activo encontrado: ${asset.template?.name || 'Sin nombre'}`);
-      }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Error desconocido';
-      setError('Error al procesar QR: ' + errorMsg);
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   // Resetear estado
@@ -471,8 +456,24 @@ const FloatingAssetButton: React.FC = () => {
     setError(null);
     setSuccess(null);
     setSelectedCategory('');
+    setCameraReady(false);
     stopCamera();
   };
+
+  // Limpiar mensajes después de un tiempo
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => setSuccess(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [success]);
+
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(null), 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
 
   return (
     <>
@@ -489,7 +490,7 @@ const FloatingAssetButton: React.FC = () => {
           className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-300 ${
             isOpen 
               ? 'bg-red-500 hover:bg-red-600 rotate-45' 
-              : 'bg-black hover:bg-gray-800'
+              : 'bg-blue-600 hover:bg-blue-700'
           } text-white`}
         >
           <Plus className="h-6 w-6" />
@@ -497,13 +498,13 @@ const FloatingAssetButton: React.FC = () => {
 
         {/* Menú de opciones */}
         {isOpen && currentStep === 'menu' && (
-          <div className="absolute bottom-16 right-0 bg-white rounded-lg shadow-xl p-4 min-w-[250px]">
+          <div className="absolute bottom-16 right-0 bg-white rounded-lg shadow-xl p-4 min-w-[250px] border">
             <h3 className="font-semibold text-gray-900 mb-3">Gestión de Activos</h3>
             
             <div className="space-y-2">
               <button
                 onClick={startCamera}
-                className="w-full flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                className="w-full flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors text-left border border-gray-200"
               >
                 <Camera className="h-5 w-5 text-green-600" />
                 <div>
@@ -513,8 +514,8 @@ const FloatingAssetButton: React.FC = () => {
               </button>
               
               <button
-                onClick={startQRScanner}
-                className="w-full flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                onClick={() => setCurrentStep('scanner')}
+                className="w-full flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors text-left border border-gray-200"
               >
                 <Scan className="h-5 w-5 text-blue-600" />
                 <div>
@@ -553,22 +554,52 @@ const FloatingAssetButton: React.FC = () => {
               {currentStep === 'camera' && (
                 <div className="space-y-4">
                   <div className="relative bg-black rounded-lg overflow-hidden">
+                    {isLoading && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 z-10">
+                        <div className="text-white text-center">
+                          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
+                          <p>Iniciando cámara...</p>
+                        </div>
+                      </div>
+                    )}
+                    
                     <video
                       ref={videoRef}
                       autoPlay
                       playsInline
+                      muted
                       className="w-full h-64 object-cover"
+                      style={{ transform: 'scaleX(-1)' }}
                     />
-                    <button
-                      onClick={capturePhoto}
-                      className="absolute bottom-4 left-1/2 transform -translate-x-1/2 w-16 h-16 bg-white rounded-full border-4 border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                    >
-                      <div className="w-12 h-12 bg-white rounded-full"></div>
-                    </button>
+                    
+                    {cameraReady && (
+                      <button
+                        onClick={capturePhoto}
+                        className="absolute bottom-4 left-1/2 transform -translate-x-1/2 w-16 h-16 bg-white rounded-full border-4 border-gray-300 flex items-center justify-center hover:bg-gray-50 hover:scale-105 transition-all"
+                      >
+                        <Camera className="w-6 h-6 text-gray-700" />
+                      </button>
+                    )}
                   </div>
-                  <p className="text-sm text-gray-600 text-center">
-                    Posiciona el activo en el centro y toca el botón para capturar
-                  </p>
+                  
+                  <div className="text-center space-y-2">
+                    <p className="text-sm text-gray-600">
+                      {isLoading 
+                        ? 'Iniciando cámara...' 
+                        : cameraReady 
+                        ? 'Posiciona el activo en el centro y toca el botón para capturar'
+                        : 'Cargando cámara...'
+                      }
+                    </p>
+                    {!cameraReady && !isLoading && (
+                      <button
+                        onClick={startCamera}
+                        className="text-blue-600 text-sm underline"
+                      >
+                        Reintentar
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -580,19 +611,19 @@ const FloatingAssetButton: React.FC = () => {
                       <img 
                         src={capturedImage} 
                         alt="Capturada" 
-                        className="w-24 h-24 object-cover rounded-lg mx-auto mb-4"
+                        className="w-24 h-24 object-cover rounded-lg mx-auto mb-4 border border-gray-200"
                       />
                     </div>
                   )}
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Escuela
+                      Escuela *
                     </label>
                     <select
                       value={selectedSchool}
                       onChange={(e) => handleSchoolChange(e.target.value)}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option value="">Seleccionar escuela</option>
                       {schools.map(school => (
@@ -605,19 +636,19 @@ const FloatingAssetButton: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Aula
+                      Aula *
                     </label>
                     <select
                       name="classroom_id"
                       value={assetData.classroom_id}
                       onChange={handleInputChange}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       disabled={!selectedSchool}
                     >
                       <option value="">Seleccionar aula</option>
                       {classrooms.map(classroom => (
                         <option key={classroom.id} value={classroom.id}>
-                          {classroom.name}
+                          {classroom.name} (Capacidad: {classroom.capacity})
                         </option>
                       ))}
                     </select>
@@ -625,12 +656,12 @@ const FloatingAssetButton: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Categoría
+                      Categoría *
                     </label>
                     <select
                       value={selectedCategory}
                       onChange={(e) => handleCategoryChange(e.target.value)}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option value="">Seleccionar categoría</option>
                       {categories.map(category => (
@@ -643,19 +674,21 @@ const FloatingAssetButton: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Plantilla
+                      Plantilla *
                     </label>
                     <select
                       name="template_id"
                       value={assetData.template_id}
                       onChange={handleInputChange}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       disabled={!selectedCategory}
                     >
                       <option value="">Seleccionar plantilla</option>
-                      {templates.map(template => (
+                      {templates
+                        .filter(template => template.category_id === selectedCategory)
+                        .map(template => (
                         <option key={template.id} value={template.id}>
-                          {template.name}
+                          {template.name} - {template.manufacturer}
                         </option>
                       ))}
                     </select>
@@ -670,7 +703,7 @@ const FloatingAssetButton: React.FC = () => {
                       name="serial_number"
                       value={assetData.serial_number}
                       onChange={handleInputChange}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="Ingrese número de serie"
                     />
                   </div>
@@ -684,13 +717,13 @@ const FloatingAssetButton: React.FC = () => {
                       name="purchase_date"
                       value={assetData.purchase_date}
                       onChange={handleInputChange}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Valor Estimado
+                      Valor Estimado ($)
                     </label>
                     <input
                       type="number"
@@ -698,15 +731,16 @@ const FloatingAssetButton: React.FC = () => {
                       value={assetData.value_estimate}
                       onChange={handleInputChange}
                       step="0.01"
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                      min="0"
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="0.00"
                     />
                   </div>
 
                   <button
                     onClick={createAsset}
-                    disabled={isLoading}
-                    className="w-full bg-black text-white py-3 px-4 rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                    disabled={isLoading || !assetData.template_id || !assetData.classroom_id}
+                    className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors"
                   >
                     {isLoading ? (
                       <>
@@ -729,6 +763,9 @@ const FloatingAssetButton: React.FC = () => {
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                     <Check className="h-8 w-8 text-green-600 mx-auto mb-2" />
                     <p className="text-green-800 font-medium">¡Activo creado exitosamente!</p>
+                    <p className="text-sm text-green-600 mt-1">
+                      {qrData.template.name} - {qrData.serial_number}
+                    </p>
                   </div>
 
                   {qrData.qr_code?.qr_url && (
@@ -736,7 +773,7 @@ const FloatingAssetButton: React.FC = () => {
                       <img 
                         src={qrData.qr_code.qr_url} 
                         alt="Código QR"
-                        className="w-48 h-48 mx-auto"
+                        className="w-48 h-48 mx-auto border border-gray-200 rounded"
                       />
                     </div>
                   )}
@@ -748,32 +785,45 @@ const FloatingAssetButton: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3">
                     {printerStatus !== 'connected' && (
                       <button
                         onClick={connectBluetoothPrinter}
                         disabled={printerStatus === 'connecting'}
-                        className="flex items-center justify-center space-x-2 py-2 px-4 border border-gray-300 rounded-lg hover:bg-gray-50"
+                        className="flex items-center justify-center space-x-2 py-2 px-4 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
                       >
                         <Bluetooth className="h-4 w-4" />
-                        <span>{printerStatus === 'connecting' ? 'Conectando...' : 'Conectar'}</span>
+                        <span>{printerStatus === 'connecting' ? 'Conectando...' : 'Conectar Impresora'}</span>
                       </button>
                     )}
                     
                     <button
-                      onClick={printQR}
-                      className="flex items-center justify-center space-x-2 py-2 px-4 bg-black text-white rounded-lg hover:bg-gray-800"
-                    >
-                      <Printer className="h-4 w-4" />
-                      <span>Imprimir</span>
-                    </button>
-                    
-                    <button
                       onClick={downloadQR}
-                      className="flex items-center justify-center space-x-2 py-2 px-4 border border-gray-300 rounded-lg hover:bg-gray-50"
+                      className="flex items-center justify-center space-x-2 py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                     >
                       <Download className="h-4 w-4" />
-                      <span>Descargar</span>
+                      <span>Descargar QR</span>
+                    </button>
+                    
+                    {printerStatus === 'connected' && (
+                      <button
+                        onClick={() => setSuccess('Enviando a impresión...')}
+                        className="flex items-center justify-center space-x-2 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                      >
+                        <Printer className="h-4 w-4" />
+                        <span>Imprimir QR</span>
+                      </button>
+                    )}
+                    
+                    <button
+                      onClick={() => {
+                        resetState();
+                        setIsOpen(true);
+                      }}
+                      className="flex items-center justify-center space-x-2 py-2 px-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>Crear Otro Activo</span>
                     </button>
                   </div>
                 </div>
@@ -782,20 +832,20 @@ const FloatingAssetButton: React.FC = () => {
               {/* Scanner QR */}
               {currentStep === 'scanner' && (
                 <div className="space-y-4">
-                  <div className="relative bg-black rounded-lg overflow-hidden">
-                    <video
-                      ref={qrScannerRef}
-                      autoPlay
-                      playsInline
-                      className="w-full h-64 object-cover"
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-48 h-48 border-2 border-white rounded-lg"></div>
-                    </div>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                    <QrCode className="h-8 w-8 text-blue-600 mx-auto mb-2" />
+                    <p className="text-blue-800 font-medium">Funcionalidad en desarrollo</p>
+                    <p className="text-sm text-blue-600 mt-1">
+                      El escáner QR estará disponible próximamente
+                    </p>
                   </div>
-                  <p className="text-sm text-gray-600 text-center">
-                    Posiciona el código QR dentro del marco
-                  </p>
+                  
+                  <button
+                    onClick={() => setCurrentStep('menu')}
+                    className="w-full py-2 px-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Volver al Menú
+                  </button>
                 </div>
               )}
 
@@ -803,14 +853,30 @@ const FloatingAssetButton: React.FC = () => {
               {error && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start space-x-2">
                   <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
-                  <p className="text-red-800 text-sm">{error}</p>
+                  <div className="flex-1">
+                    <p className="text-red-800 text-sm">{error}</p>
+                    <button
+                      onClick={() => setError(null)}
+                      className="text-red-600 text-xs underline mt-1"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
                 </div>
               )}
 
               {success && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-start space-x-2">
                   <Check className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
-                  <p className="text-green-800 text-sm">{success}</p>
+                  <div className="flex-1">
+                    <p className="text-green-800 text-sm">{success}</p>
+                    <button
+                      onClick={() => setSuccess(null)}
+                      className="text-green-600 text-xs underline mt-1"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -823,5 +889,5 @@ const FloatingAssetButton: React.FC = () => {
     </>
   );
 };
-export default FloatingAssetButton;
 
+export default FloatingAssetButton;
