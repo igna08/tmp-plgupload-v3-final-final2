@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Camera, Plus, X, Save, Printer, Download, Check, AlertCircle, Loader } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
 
@@ -76,6 +77,7 @@ interface BluetoothPrinter {
 type StepType = 'camera' | 'form' | 'qr';
 
 const AssetCreatorFAB: React.FC = () => {
+  const { token } = useAuth(); // Get token from auth context
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [currentStep, setCurrentStep] = useState<StepType>('camera');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -103,19 +105,21 @@ const AssetCreatorFAB: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Load schools on component mount
+  // Load data only when token is available
   useEffect(() => {
-    loadSchools();
-    loadCategories();
-    loadTemplates();
-  }, []);
+    if (token) {
+      loadSchools();
+      loadCategories();
+      loadTemplates();
+    }
+  }, [token]);
 
   // Load classrooms when school changes
   useEffect(() => {
-    if (selectedSchool) {
+    if (selectedSchool && token) {
       loadClassrooms(selectedSchool);
     }
-  }, [selectedSchool]);
+  }, [selectedSchool, token]);
 
   // Cleanup camera stream on unmount or when modal closes
   useEffect(() => {
@@ -144,6 +148,7 @@ const AssetCreatorFAB: React.FC = () => {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
       });
       
@@ -168,6 +173,7 @@ const AssetCreatorFAB: React.FC = () => {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
       });
       
@@ -190,6 +196,7 @@ const AssetCreatorFAB: React.FC = () => {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
       });
       
@@ -212,6 +219,7 @@ const AssetCreatorFAB: React.FC = () => {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
       });
       
@@ -340,6 +348,7 @@ const AssetCreatorFAB: React.FC = () => {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
           },
           body: JSON.stringify({
             name: formData.name,
@@ -364,6 +373,7 @@ const AssetCreatorFAB: React.FC = () => {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           template_id: templateId,
@@ -388,6 +398,7 @@ const AssetCreatorFAB: React.FC = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
       });
 
