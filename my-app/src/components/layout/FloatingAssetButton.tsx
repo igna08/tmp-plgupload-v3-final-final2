@@ -209,49 +209,94 @@ const FloatingAssetButton: React.FC = () => {
       
       console.log('Solicitando acceso a la cámara...');
       
-      const constraints = {
-        video: { 
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 1280, min: 640 },
-          height: { ideal: 720, min: 480 }
+      // Intentar con diferentes configuraciones de cámara
+      const constraints = [
+        // Configuración ideal
+        {
+          video: { 
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        },
+        // Configuración más simple
+        {
+          video: { 
+            facingMode: 'environment'
+          }
+        },
+        // Configuración básica
+        {
+          video: true
         }
-      };
+      ];
       
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log('Stream obtenido:', stream);
+      let stream: MediaStream | null = null;
+      
+      for (const constraint of constraints) {
+        try {
+          console.log('Intentando con configuración:', constraint);
+          stream = await navigator.mediaDevices.getUserMedia(constraint);
+          console.log('Stream obtenido exitosamente');
+          break;
+        } catch (err) {
+          console.log('Configuración falló, intentando siguiente...');
+          continue;
+        }
+      }
+      
+      if (!stream) {
+        throw new Error('No se pudo obtener acceso a ninguna cámara');
+      }
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
         
-        // Esperar a que el video esté listo
-        videoRef.current.onloadedmetadata = () => {
-          console.log('Video metadata cargada');
+        // Forzar reproducción
+        try {
+          await videoRef.current.play();
+          console.log('Video iniciado correctamente');
+        } catch (playError) {
+          console.log('Error al reproducir video:', playError);
+        }
+        
+        // Handler para cuando el video esté listo
+        const handleVideoReady = () => {
+          console.log('Video listo para usar');
           setCameraReady(true);
           setIsLoading(false);
         };
         
-        videoRef.current.oncanplay = () => {
-          console.log('Video puede reproducirse');
-          setCameraReady(true);
-          setIsLoading(false);
-        };
+        // Múltiples eventos para asegurar que detectemos cuando esté listo
+        videoRef.current.addEventListener('loadeddata', handleVideoReady);
+        videoRef.current.addEventListener('canplay', handleVideoReady);
+        videoRef.current.addEventListener('playing', handleVideoReady);
         
-        // Timeout de seguridad
+        // Timeout de seguridad más corto
         setTimeout(() => {
-          if (!cameraReady) {
-            console.log('Activando cámara por timeout');
-            setCameraReady(true);
-            setIsLoading(false);
-          }
-        }, 3000);
+          console.log('Timeout alcanzado, activando cámara por seguridad');
+          setCameraReady(true);
+          setIsLoading(false);
+        }, 2000);
       }
       
       setCurrentStep('camera');
     } catch (err) {
       console.error('Error al acceder a la cámara:', err);
       const errorMsg = err instanceof Error ? err.message : 'Error desconocido';
-      setError(`No se pudo acceder a la cámara: ${errorMsg}`);
+      
+      // Mensajes de error más específicos
+      let userMessage = 'No se pudo acceder a la cámara';
+      if (errorMsg.includes('Permission denied')) {
+        userMessage = 'Acceso denegado. Por favor permite el uso de la cámara en tu navegador';
+      } else if (errorMsg.includes('NotFound')) {
+        userMessage = 'No se encontró ninguna cámara en tu dispositivo';
+      } else if (errorMsg.includes('NotAllowed')) {
+        userMessage = 'Permisos de cámara denegados. Verifica la configuración de tu navegador';
+      }
+      
+      setError(userMessage);
       setIsLoading(false);
       setCameraReady(false);
     }
