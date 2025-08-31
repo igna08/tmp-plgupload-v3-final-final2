@@ -1,35 +1,25 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Plus, 
-  Camera, 
-  QrCode, 
-  X, 
-  Check, 
-  Upload, 
-  Printer, 
-  Download, 
-  AlertCircle,
-  Loader2,
-  Building,
-  MapPin,
-  DollarSign,
-  Calendar,
-  Hash,
-  ImageIcon,
-  Bluetooth,
-  Scan
-} from 'lucide-react';
+import { Camera, Plus, X, Save, Printer, Download, Check, AlertCircle, Loader } from 'lucide-react';
 
-// Interfaces basadas en tu API
+const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
+
+interface School {
+  id: string;
+  name: string;
+  address: string;
+  description: string;
+  logo_url: string;
+}
+
 interface Category {
   id: string;
   name: string;
   description: string;
   created_at: string;
   updated_at: string;
-  templates: Template[];
+  templates: any[];
 }
 
 interface Template {
@@ -54,621 +44,751 @@ interface Classroom {
   school_id: string;
 }
 
-interface School {
-  id: string;
+interface FormData {
   name: string;
-  address: string;
-  description: string;
-  logo_url: string;
-}
-
-interface AssetData {
-  template_id: string;
-  serial_number: string;
-  purchase_date: string;
-  value_estimate: number;
-  image_url: string;
-  status: string;
+  price: string;
+  quantity: number;
+  school_id: string;
   classroom_id: string;
+  template_id: string;
+  use_existing_template: boolean;
+  category_id: string;
 }
 
-interface QRCode {
+interface QRData {
   asset_id: string;
-  id: string;
   qr_url: string;
-  payload: Record<string, any>;
+  name: string;
+  school: string;
+  classroom: string;
 }
 
-interface Asset {
-  id: string;
-  template_id: string;
-  serial_number: string;
-  purchase_date: string;
-  value_estimate: number;
-  image_url: string;
-  status: string;
-  classroom_id: string;
-  created_at: string;
-  updated_at: string;
-  template: Template;
-  qr_code?: QRCode;
+interface StatusState {
+  type: 'success' | 'error' | '';
+  message: string;
 }
 
-const FloatingAssetButton: React.FC = () => {
-  // Estados principales
-  const [isOpen, setIsOpen] = useState<boolean>(false);
-  const [currentStep, setCurrentStep] = useState<'menu' | 'camera' | 'form' | 'qr-result' | 'scanner'>('menu');
-  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+interface BluetoothPrinter {
+  device: BluetoothDevice;
+  characteristic: BluetoothRemoteGATTCharacteristic;
+}
+
+type StepType = 'camera' | 'form' | 'qr';
+
+const AssetCreatorFAB: React.FC = () => {
+  const [isExpanded, setIsExpanded] = useState<boolean>(false);
+  const [currentStep, setCurrentStep] = useState<StepType>('camera');
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [cameraReady, setCameraReady] = useState<boolean>(false);
-  
-  // Estados del formulario basado en tu API
-  const [assetData, setAssetData] = useState<AssetData>({
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+  const [selectedSchool, setSelectedSchool] = useState<string>('');
+  const [bluetoothPrinter, setBluetoothPrinter] = useState<BluetoothPrinter | null>(null);
+  const [qrData, setQrData] = useState<QRData | null>(null);
+  const [status, setStatus] = useState<StatusState>({ type: '', message: '' });
+  const [formData, setFormData] = useState<FormData>({
+    name: '',
+    price: '',
+    quantity: 1,
+    school_id: '',
+    classroom_id: '',
     template_id: '',
-    serial_number: '',
-    purchase_date: new Date().toISOString().split('T')[0],
-    value_estimate: 0,
-    image_url: '',
-    status: 'available',
-    classroom_id: ''
+    use_existing_template: true,
+    category_id: ''
   });
-  
-  // Estados para datos de la API (usando datos mock para demo)
-  const [categories] = useState<Category[]>([
-    { 
-      id: '1', 
-      name: 'Equipos de Cómputo', 
-      description: 'Computadoras y accesorios',
-      created_at: '2024-01-01T00:00:00Z',
-      updated_at: '2024-01-01T00:00:00Z',
-      templates: []
-    },
-    { 
-      id: '2', 
-      name: 'Mobiliario', 
-      description: 'Mesas, sillas y armarios',
-      created_at: '2024-01-01T00:00:00Z',
-      updated_at: '2024-01-01T00:00:00Z',
-      templates: []
-    }
-  ]);
-  
-  const [templates, setTemplates] = useState<Template[]>([
-    {
-      id: '1',
-      name: 'Laptop Dell',
-      description: 'Laptop corporativa',
-      manufacturer: 'Dell',
-      model_number: 'L3520',
-      category_id: '1',
-      created_at: '2024-01-01T00:00:00Z',
-      updated_at: '2024-01-01T00:00:00Z',
-      category: { id: '1', name: 'Equipos de Cómputo' }
-    },
-    {
-      id: '2',
-      name: 'Mesa de Trabajo',
-      description: 'Mesa de madera',
-      manufacturer: 'Mueblería XYZ',
-      model_number: 'MT-001',
-      category_id: '2',
-      created_at: '2024-01-01T00:00:00Z',
-      updated_at: '2024-01-01T00:00:00Z',
-      category: { id: '2', name: 'Mobiliario' }
-    }
-  ]);
-  
-  const [classrooms] = useState<Classroom[]>([
-    { id: '1', name: 'Aula 101', capacity: 30, school_id: '1' },
-    { id: '2', name: 'Aula 102', capacity: 25, school_id: '1' },
-    { id: '3', name: 'Laboratorio', capacity: 20, school_id: '1' }
-  ]);
-  
-  const [schools] = useState<School[]>([
-    {
-      id: '1',
-      name: 'Escuela Primaria Central',
-      address: 'Calle Principal 123',
-      description: 'Escuela pública',
-      logo_url: ''
-    }
-  ]);
-  
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [selectedSchool, setSelectedSchool] = useState<string>('1');
-  
-  // Estados de QR y impresión
-  const [qrData, setQrData] = useState<Asset | null>(null);
-  const [printerStatus, setPrinterStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
-  const [bluetoothDevice, setBluetoothDevice] = useState<BluetoothDevice | null>(null);
-  
-  // Referencias tipadas
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const qrScannerRef = useRef<HTMLVideoElement>(null);
 
-  // Cleanup effect
+  // Load schools on component mount
+  useEffect(() => {
+    loadSchools();
+    loadCategories();
+    loadTemplates();
+  }, []);
+
+  // Load classrooms when school changes
+  useEffect(() => {
+    if (selectedSchool) {
+      loadClassrooms(selectedSchool);
+    }
+  }, [selectedSchool]);
+
+  // Cleanup camera stream on unmount or when modal closes
   useEffect(() => {
     return () => {
-      stopCamera();
+      cleanupCamera();
     };
   }, []);
 
-  // Funciones de cámara mejoradas
-  const startCamera = async (): Promise<void> => {
-    try {
-      setError(null);
-      setIsLoading(true);
-      setCameraReady(false);
-      
-      // Detener cualquier stream previo
-      stopCamera();
-      
-      console.log('Solicitando acceso a la cámara...');
-      
-      // Intentar con diferentes configuraciones de cámara
-      const constraints = [
-        // Configuración ideal
-        {
-          video: { 
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          }
-        },
-        // Configuración más simple
-        {
-          video: { 
-            facingMode: 'environment'
-          }
-        },
-        // Configuración básica
-        {
-          video: true
-        }
-      ];
-      
-      let stream: MediaStream | null = null;
-      
-      for (const constraint of constraints) {
-        try {
-          console.log('Intentando con configuración:', constraint);
-          stream = await navigator.mediaDevices.getUserMedia(constraint);
-          console.log('Stream obtenido exitosamente');
-          break;
-        } catch (err) {
-          console.log('Configuración falló, intentando siguiente...');
-          continue;
-        }
-      }
-      
-      if (!stream) {
-        throw new Error('No se pudo obtener acceso a ninguna cámara');
-      }
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        streamRef.current = stream;
-        
-        // Forzar reproducción
-        try {
-          await videoRef.current.play();
-          console.log('Video iniciado correctamente');
-        } catch (playError) {
-          console.log('Error al reproducir video:', playError);
-        }
-        
-        // Handler para cuando el video esté listo
-        const handleVideoReady = () => {
-          console.log('Video listo para usar');
-          setCameraReady(true);
-          setIsLoading(false);
-        };
-        
-        // Múltiples eventos para asegurar que detectemos cuando esté listo
-        videoRef.current.addEventListener('loadeddata', handleVideoReady);
-        videoRef.current.addEventListener('canplay', handleVideoReady);
-        videoRef.current.addEventListener('playing', handleVideoReady);
-        
-        // Timeout de seguridad más corto
-        setTimeout(() => {
-          console.log('Timeout alcanzado, activando cámara por seguridad');
-          setCameraReady(true);
-          setIsLoading(false);
-        }, 2000);
-      }
-      
-      setCurrentStep('camera');
-    } catch (err) {
-      console.error('Error al acceder a la cámara:', err);
-      const errorMsg = err instanceof Error ? err.message : 'Error desconocido';
-      
-      // Mensajes de error más específicos
-      let userMessage = 'No se pudo acceder a la cámara';
-      if (errorMsg.includes('Permission denied')) {
-        userMessage = 'Acceso denegado. Por favor permite el uso de la cámara en tu navegador';
-      } else if (errorMsg.includes('NotFound')) {
-        userMessage = 'No se encontró ninguna cámara en tu dispositivo';
-      } else if (errorMsg.includes('NotAllowed')) {
-        userMessage = 'Permisos de cámara denegados. Verifica la configuración de tu navegador';
-      }
-      
-      setError(userMessage);
-      setIsLoading(false);
-      setCameraReady(false);
-    }
-  };
-
-  const stopCamera = (): void => {
-    console.log('Deteniendo cámara...');
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => {
+  const cleanupCamera = (): void => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track: MediaStreamTrack) => {
         track.stop();
-        console.log('Track detenido:', track.kind);
       });
-      streamRef.current = null;
+      setCameraStream(null);
     }
     
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-    
-    setCameraReady(false);
   };
 
-  const capturePhoto = (): void => {
-    console.log('Capturando foto...');
-    
-    if (!videoRef.current || !canvasRef.current) {
-      setError('Error: Referencias de video o canvas no disponibles');
-      return;
-    }
-    
-    if (!cameraReady) {
-      setError('La cámara no está lista. Por favor espere.');
-      return;
-    }
-    
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
-    
-    if (!context) {
-      setError('Error al obtener contexto del canvas');
-      return;
-    }
-    
-    // Verificar que el video tiene dimensiones válidas
-    if (video.videoWidth === 0 || video.videoHeight === 0) {
-      setError('El video no tiene dimensiones válidas. Intente nuevamente.');
-      return;
-    }
-    
-    console.log('Dimensiones del video:', video.videoWidth, 'x', video.videoHeight);
-    
-    // Configurar canvas con las dimensiones del video
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    
-    // Dibujar el frame actual del video en el canvas
-    context.drawImage(video, 0, 0);
-    
+  const loadSchools = async (): Promise<void> => {
     try {
-      // Convertir a blob y luego a data URL
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          setError('Error al generar la imagen');
-          return;
-        }
-        
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result as string;
-          console.log('Foto capturada exitosamente');
-          setCapturedImage(result);
-          setAssetData(prev => ({ ...prev, image_url: result }));
-          setCurrentStep('form');
-          setSuccess('Foto capturada exitosamente');
-          stopCamera();
-        };
-        reader.onerror = () => {
-          setError('Error al procesar la imagen capturada');
-        };
-        reader.readAsDataURL(blob);
-      }, 'image/jpeg', 0.8);
-    } catch (err) {
-      console.error('Error al capturar foto:', err);
-      setError('Error al procesar la imagen');
+      console.log('Loading schools from:', `${API_BASE_URL}/schools/`);
+      const response = await fetch(`${API_BASE_URL}/schools/`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data: School[] = await response.json();
+      console.log('Schools loaded:', data);
+      setSchools(data);
+      setStatus({ type: 'success', message: 'Escuelas cargadas correctamente' });
+    } catch (error) {
+      setStatus({ type: 'error', message: 'Error al cargar escuelas' });
+      console.error('Error loading schools:', error);
     }
   };
 
-  // Funciones del formulario
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>): void => {
-    const { name, value } = e.target;
-    setAssetData(prev => ({
-      ...prev,
-      [name]: name === 'value_estimate' ? parseFloat(value) || 0 : value
-    }));
-  };
-
-  const handleCategoryChange = (categoryId: string): void => {
-    setSelectedCategory(categoryId);
-    setAssetData(prev => ({ ...prev, template_id: '' }));
-  };
-
-  const handleSchoolChange = (schoolId: string): void => {
-    setSelectedSchool(schoolId);
-    setAssetData(prev => ({ ...prev, classroom_id: '' }));
-  };
-
-  // Crear activo (simulado)
-  const createAsset = async (): Promise<void> => {
-    if (!assetData.template_id || !assetData.classroom_id) {
-      setError('Por favor complete todos los campos requeridos');
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-
+  const loadCategories = async (): Promise<void> => {
     try {
-      // Simular llamada a la API
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log('Loading categories from:', `${API_BASE_URL}/assets/categories/`);
+      const response = await fetch(`${API_BASE_URL}/assets/categories/`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
       
-      const selectedTemplate = templates.find(t => t.id === assetData.template_id);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       
-      const newAsset: Asset = {
-        ...assetData,
-        id: Date.now().toString(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        template: selectedTemplate!,
-        qr_code: {
-          id: 'qr-' + Date.now(),
-          asset_id: Date.now().toString(),
-          qr_url: `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="white"/><text x="100" y="100" text-anchor="middle" font-family="monospace" font-size="12">QR Code for Asset ${assetData.serial_number}</text></svg>`,
-          payload: { asset_id: Date.now().toString() }
+      const data: Category[] = await response.json();
+      console.log('Categories loaded:', data);
+      setCategories(data);
+    } catch (error) {
+      console.error('Error loading categories:', error);
+    }
+  };
+
+  const loadTemplates = async (): Promise<void> => {
+    try {
+      console.log('Loading templates from:', `${API_BASE_URL}/assets/templates/`);
+      const response = await fetch(`${API_BASE_URL}/assets/templates/`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data: Template[] = await response.json();
+      console.log('Templates loaded:', data);
+      setTemplates(data);
+    } catch (error) {
+      console.error('Error loading templates:', error);
+    }
+  };
+
+  const loadClassrooms = async (schoolId: string): Promise<void> => {
+    try {
+      console.log('Loading classrooms from:', `${API_BASE_URL}/schools/${schoolId}/classrooms/`);
+      const response = await fetch(`${API_BASE_URL}/schools/${schoolId}/classrooms/`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data: Classroom[] = await response.json();
+      console.log('Classrooms loaded:', data);
+      setClassrooms(data);
+      setStatus({ type: 'success', message: 'Aulas cargadas correctamente' });
+    } catch (error) {
+      setStatus({ type: 'error', message: 'Error al cargar aulas' });
+      console.error('Error loading classrooms:', error);
+    }
+  };
+
+  const startCamera = async (): Promise<void> => {
+    try {
+      setIsLoading(true);
+      
+      // Clean up any existing stream first
+      cleanupCamera();
+      
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { 
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
         }
-      };
+      });
       
-      setQrData(newAsset);
-      setSuccess('¡Activo creado exitosamente!');
-      setCurrentStep('qr-result');
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Error desconocido';
-      setError('Error al crear el activo: ' + errorMsg);
+      setCameraStream(stream);
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        // Wait for video to be ready
+        await new Promise<void>((resolve) => {
+          if (videoRef.current) {
+            videoRef.current.onloadedmetadata = () => resolve();
+          }
+        });
+      }
+      
+      setStatus({ type: 'success', message: 'Cámara lista para capturar' });
+    } catch (error) {
+      setStatus({ type: 'error', message: 'Error al acceder a la cámara' });
+      console.error('Camera error:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Conectar impresora Bluetooth
-  const connectBluetoothPrinter = async (): Promise<void> => {
-    if (!navigator.bluetooth) {
-      setError('Bluetooth no es compatible con este navegador');
+  const capturePhoto = (): void => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    
+    // Ensure video dimensions are available
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      setStatus({ type: 'error', message: 'Video no está listo para capturar' });
       return;
     }
-
-    setPrinterStatus('connecting');
     
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    ctx.drawImage(video, 0, 0);
+    
+    const imageData = canvas.toDataURL('image/jpeg', 0.8);
+    setCapturedImage(imageData);
+    setCurrentStep('form');
+    
+    // Clean up camera after capture
+    cleanupCamera();
+    setStatus({ type: 'success', message: 'Foto capturada exitosamente' });
+  };
+
+  const handleInputChange = (field: keyof FormData, value: string | number | boolean): void => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const validateForm = (): boolean => {
+    if (!capturedImage) {
+      setStatus({ type: 'error', message: 'Por favor capture una foto del objeto' });
+      return false;
+    }
+    if (!formData.name.trim()) {
+      setStatus({ type: 'error', message: 'El nombre es obligatorio' });
+      return false;
+    }
+    if (!formData.school_id) {
+      setStatus({ type: 'error', message: 'Seleccione una escuela' });
+      return false;
+    }
+    if (!formData.classroom_id) {
+      setStatus({ type: 'error', message: 'Seleccione un aula' });
+      return false;
+    }
+    if (formData.use_existing_template && !formData.template_id) {
+      setStatus({ type: 'error', message: 'Seleccione una plantilla existente o elija crear nueva' });
+      return false;
+    }
+    if (!formData.use_existing_template && !formData.category_id) {
+      setStatus({ type: 'error', message: 'Seleccione una categoría para la nueva plantilla' });
+      return false;
+    }
+    return true;
+  };
+
+  const createAsset = async (): Promise<void> => {
+    if (!validateForm()) return;
+
+    setIsLoading(true);
     try {
-      const device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }],
-        optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
+      let templateId = formData.template_id;
+
+      // Create new template only if user chooses to create new one
+      if (!formData.use_existing_template) {
+        console.log('Creating new template at:', `${API_BASE_URL}/assets/templates/`);
+        const templateResponse = await fetch(`${API_BASE_URL}/assets/templates/`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: formData.name,
+            description: `Asset template created via mobile app`,
+            manufacturer: 'Generic',
+            model_number: 'N/A',
+            category_id: formData.category_id || null
+          })
+        });
+
+        if (!templateResponse.ok) {
+          throw new Error(`Template creation failed with status: ${templateResponse.status}`);
+        }
+        const template = await templateResponse.json();
+        console.log('Template created:', template);
+        templateId = template.id;
+      }
+
+      // Create the asset using existing or newly created template
+      console.log('Creating asset at:', `${API_BASE_URL}/assets/`);
+      const assetResponse = await fetch(`${API_BASE_URL}/assets/`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          template_id: templateId,
+          serial_number: `SA-${Date.now()}`,
+          purchase_date: new Date().toISOString().split('T')[0],
+          value_estimate: parseFloat(formData.price) || 0,
+          image_url: capturedImage,
+          status: 'available',
+          classroom_id: formData.classroom_id
+        })
       });
 
-      const server = await device.gatt?.connect();
-      if (server) {
-        setBluetoothDevice(device);
-        setPrinterStatus('connected');
-        setSuccess('Impresora conectada exitosamente');
+      if (!assetResponse.ok) {
+        throw new Error(`Asset creation failed with status: ${assetResponse.status}`);
       }
-    } catch (err) {
-      setPrinterStatus('disconnected');
-      const errorMsg = err instanceof Error ? err.message : 'Error desconocido';
-      setError('Error conectando impresora: ' + errorMsg);
+      const asset = await assetResponse.json();
+      console.log('Asset created:', asset);
+
+      // Generate QR Code
+      console.log('Generating QR at:', `${API_BASE_URL}/assets/${asset.id}/qr-codes/`);
+      const qrResponse = await fetch(`${API_BASE_URL}/assets/${asset.id}/qr-codes/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!qrResponse.ok) {
+        throw new Error(`QR generation failed with status: ${qrResponse.status}`);
+      }
+      const qr = await qrResponse.json();
+      console.log('QR generated:', qr);
+
+      const selectedSchoolData = schools.find(s => s.id === formData.school_id);
+      const selectedClassroomData = classrooms.find(c => c.id === formData.classroom_id);
+
+      setQrData({
+        asset_id: asset.id,
+        qr_url: qr.qr_url,
+        name: formData.name,
+        school: selectedSchoolData?.name || '',
+        classroom: selectedClassroomData?.name || ''
+      });
+
+      setCurrentStep('qr');
+      setStatus({ type: 'success', message: '¡Activo creado exitosamente!' });
+    } catch (error) {
+      setStatus({ type: 'error', message: 'Error al crear el activo' });
+      console.error('Error creating asset:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Descargar QR
+  const connectBluetooth = async (): Promise<void> => {
+    try {
+      setIsLoading(true);
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }]
+      });
+      
+      if (!device.gatt) {
+        throw new Error('GATT not available');
+      }
+      
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+      const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+      
+      setBluetoothPrinter({ device, characteristic });
+      setStatus({ type: 'success', message: 'Impresora conectada exitosamente' });
+    } catch (error) {
+      setStatus({ type: 'error', message: 'Error al conectar con la impresora' });
+      console.error('Bluetooth error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const printQR = async (): Promise<void> => {
+    if (!bluetoothPrinter || !qrData) {
+      await connectBluetooth();
+      if (!bluetoothPrinter || !qrData) return;
+    }
+
+    try {
+      setIsLoading(true);
+
+      // Create print commands for thermal printer using Uint8Array
+      const qrUrl = qrData?.qr_url ?? '';
+      const qrUrlBytes = new TextEncoder().encode(qrUrl);
+      const pL = (qrUrlBytes.length + 3) & 0xff;
+      const pH = ((qrUrlBytes.length + 3) >> 8) & 0xff;
+
+      // Build the command as a Uint8Array
+      const commands: number[] = [];
+      // Initialize printer
+      commands.push(0x1B, 0x40);
+      // Center align
+      commands.push(0x1B, 0x61, 0x01);
+      // Print asset name
+      for (const c of (qrData?.name ?? '').split('')) commands.push(...new TextEncoder().encode(c));
+      commands.push(0x0A);
+      // Print school and classroom
+      for (const c of (`${qrData?.school ?? ''} - ${qrData?.classroom ?? ''}`).split('')) commands.push(...new TextEncoder().encode(c));
+      commands.push(0x0A);
+      // QR code: model 2, size 6
+      commands.push(0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00);
+      // Store QR data
+      commands.push(0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30, ...qrUrlBytes);
+      // Print QR code
+      commands.push(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30);
+      // Feed paper
+      commands.push(0x0A, 0x0A, 0x0A);
+      // Cut paper
+      commands.push(0x1B, 0x69);
+
+      await bluetoothPrinter.characteristic.writeValue(new Uint8Array(commands));
+
+      setStatus({ type: 'success', message: 'QR impreso exitosamente' });
+    } catch (error) {
+      setStatus({ type: 'error', message: 'Error al imprimir QR' });
+      console.error('Print error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const downloadQR = (): void => {
-    if (!qrData?.qr_code?.qr_url) return;
+    if (!qrData) return;
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
     
+    if (!ctx) return;
+    
+    // Set canvas size
+    canvas.width = 300;
+    canvas.height = 350;
+    
+    // Draw white background
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Create QR code placeholder (you'd use a QR library here)
+    ctx.fillStyle = 'black';
+    ctx.fillRect(50, 50, 200, 200);
+    
+    // Add text
+    ctx.fillStyle = 'black';
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(qrData.name, 150, 280);
+    ctx.fillText(`${qrData.school} - ${qrData.classroom}`, 150, 300);
+    
+    // Download
     const link = document.createElement('a');
-    link.href = qrData.qr_code.qr_url;
-    link.download = `qr-${qrData.serial_number || 'asset'}.png`;
+    link.download = `QR_${qrData.name}_${Date.now()}.png`;
+    link.href = canvas.toDataURL();
     link.click();
   };
 
-  // Resetear estado
-  const resetState = (): void => {
-    setCurrentStep('menu');
-    setIsOpen(false);
+  const resetForm = (): void => {
+    cleanupCamera(); // Clean up camera before resetting
+    setCurrentStep('camera');
     setCapturedImage(null);
-    setAssetData({
-      template_id: '',
-      serial_number: '',
-      purchase_date: new Date().toISOString().split('T')[0],
-      value_estimate: 0,
-      image_url: '',
-      status: 'available',
-      classroom_id: ''
-    });
     setQrData(null);
-    setError(null);
-    setSuccess(null);
-    setSelectedCategory('');
-    setCameraReady(false);
-    stopCamera();
+    setFormData({
+      name: '',
+      price: '',
+      quantity: 1,
+      school_id: '',
+      classroom_id: '',
+      template_id: '',
+      use_existing_template: true,
+      category_id: ''
+    });
+    setSelectedSchool('');
+    setClassrooms([]);
+    setStatus({ type: '', message: '' });
   };
 
-  // Limpiar mensajes después de un tiempo
-  useEffect(() => {
-    if (success) {
-      const timer = setTimeout(() => setSuccess(null), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [success]);
+  const handleClose = (): void => {
+    cleanupCamera(); // Properly clean up camera
+    setIsExpanded(false);
+    resetForm();
+  };
 
-  useEffect(() => {
-    if (error) {
-      const timer = setTimeout(() => setError(null), 8000);
-      return () => clearTimeout(timer);
+  const handleStepBack = (): void => {
+    if (currentStep === 'form') {
+      cleanupCamera(); // Clean up when going back to camera
+      setCurrentStep('camera');
     }
-  }, [error]);
+  };
+
+  const StatusIndicator: React.FC = () => {
+    if (!status.message) return null;
+    
+    return (
+      <div className={`flex items-center p-3 rounded-lg mb-4 ${
+        status.type === 'error' 
+          ? 'bg-red-50 border-l-4 border-red-500' 
+          : 'bg-green-50 border-l-4 border-green-500'
+      }`}>
+        {status.type === 'error' ? (
+          <AlertCircle className="w-5 h-5 text-red-500 mr-2" />
+        ) : (
+          <Check className="w-5 h-5 text-green-500 mr-2" />
+        )}
+        <span className={`text-sm ${
+          status.type === 'error' ? 'text-red-700' : 'text-green-700'
+        }`}>
+          {status.message}
+        </span>
+      </div>
+    );
+  };
 
   return (
     <>
-      {/* Botón flotante principal */}
-      <div className="fixed bottom-6 right-6 z-50">
+      {/* Floating Action Button */}
+      {!isExpanded && (
         <button
-          onClick={() => {
-            if (isOpen) {
-              resetState();
-            } else {
-              setIsOpen(true);
-            }
-          }}
-          className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-300 ${
-            isOpen 
-              ? 'bg-red-500 hover:bg-red-600 rotate-45' 
-              : 'bg-blue-600 hover:bg-blue-700'
-          } text-white`}
+          onClick={() => setIsExpanded(true)}
+          className="fixed bottom-6 right-6 w-16 h-16 bg-black text-white rounded-full shadow-lg flex items-center justify-center hover:bg-gray-800 transition-all duration-300 hover:scale-110 z-50"
         >
-          <Plus className="h-6 w-6" />
+          <Plus className="w-8 h-8" />
         </button>
+      )}
 
-        {/* Menú de opciones */}
-        {isOpen && currentStep === 'menu' && (
-          <div className="absolute bottom-16 right-0 bg-white rounded-lg shadow-xl p-4 min-w-[250px] border">
-            <h3 className="font-semibold text-gray-900 mb-3">Gestión de Activos</h3>
-            
-            <div className="space-y-2">
-              <button
-                onClick={startCamera}
-                className="w-full flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors text-left border border-gray-200"
-              >
-                <Camera className="h-5 w-5 text-green-600" />
-                <div>
-                  <div className="font-medium text-gray-900">Crear Activo</div>
-                  <div className="text-sm text-gray-500">Tomar foto y registrar</div>
-                </div>
-              </button>
-              
-              <button
-                onClick={() => setCurrentStep('scanner')}
-                className="w-full flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors text-left border border-gray-200"
-              >
-                <Scan className="h-5 w-5 text-blue-600" />
-                <div>
-                  <div className="font-medium text-gray-900">Escanear QR</div>
-                  <div className="text-sm text-gray-500">Ver información del activo</div>
-                </div>
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Modal fullscreen */}
-      {isOpen && currentStep !== 'menu' && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+      {/* Expanded Modal */}
+      {isExpanded && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end">
+          <div className="bg-white w-full max-w-md mx-auto rounded-t-3xl shadow-2xl transform transition-transform duration-300 ease-out">
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-semibold text-gray-900">
-                {currentStep === 'camera' && 'Capturar Imagen'}
-                {currentStep === 'form' && 'Registrar Activo'}
-                {currentStep === 'qr-result' && 'Código QR Generado'}
-                {currentStep === 'scanner' && 'Escanear QR'}
-              </h2>
+              <h2 className="text-xl font-semibold text-gray-800">Crear Activo</h2>
               <button
-                onClick={resetState}
+                onClick={handleClose}
                 className="p-2 hover:bg-gray-100 rounded-full"
               >
-                <X className="h-5 w-5" />
+                <X className="w-6 h-6" />
               </button>
             </div>
 
-            {/* Contenido según el paso */}
-            <div className="p-4">
-              {/* Vista de cámara */}
+            <div className="p-4 max-h-[70vh] overflow-y-auto">
+              <StatusIndicator />
+
+              {/* Camera Step */}
               {currentStep === 'camera' && (
                 <div className="space-y-4">
-                  <div className="relative bg-black rounded-lg overflow-hidden">
-                    {isLoading && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 z-10">
-                        <div className="text-white text-center">
-                          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
-                          <p>Iniciando cámara...</p>
-                        </div>
-                      </div>
-                    )}
-                    
+                  <div className="relative">
                     <video
                       ref={videoRef}
                       autoPlay
                       playsInline
                       muted
-                      className="w-full h-64 object-cover"
-                      style={{ transform: 'scaleX(-1)' }}
+                      className="w-full h-64 object-cover rounded-lg bg-gray-900"
                     />
+                    <canvas ref={canvasRef} className="hidden" />
+                  </div>
+
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={startCamera}
+                      disabled={!!cameraStream || isLoading}
+                      className="flex-1 bg-black text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center disabled:opacity-50"
+                    >
+                      {isLoading ? (
+                        <Loader className="w-5 h-5 animate-spin mr-2" />
+                      ) : (
+                        <Camera className="w-5 h-5 mr-2" />
+                      )}
+                      {cameraStream ? 'Cámara Activa' : 'Activar Cámara'}
+                    </button>
                     
-                    {cameraReady && (
+                    {cameraStream && (
                       <button
                         onClick={capturePhoto}
-                        className="absolute bottom-4 left-1/2 transform -translate-x-1/2 w-16 h-16 bg-white rounded-full border-4 border-gray-300 flex items-center justify-center hover:bg-gray-50 hover:scale-105 transition-all"
+                        className="bg-green-600 text-white p-3 rounded-lg hover:bg-green-700"
                       >
-                        <Camera className="w-6 h-6 text-gray-700" />
-                      </button>
-                    )}
-                  </div>
-                  
-                  <div className="text-center space-y-2">
-                    <p className="text-sm text-gray-600">
-                      {isLoading 
-                        ? 'Iniciando cámara...' 
-                        : cameraReady 
-                        ? 'Posiciona el activo en el centro y toca el botón para capturar'
-                        : 'Cargando cámara...'
-                      }
-                    </p>
-                    {!cameraReady && !isLoading && (
-                      <button
-                        onClick={startCamera}
-                        className="text-blue-600 text-sm underline"
-                      >
-                        Reintentar
+                        <Camera className="w-5 h-5" />
                       </button>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* Formulario */}
+              {/* Form Step */}
               {currentStep === 'form' && (
                 <div className="space-y-4">
                   {capturedImage && (
-                    <div className="text-center">
-                      <img 
-                        src={capturedImage} 
-                        alt="Capturada" 
-                        className="w-24 h-24 object-cover rounded-lg mx-auto mb-4 border border-gray-200"
+                    <div className="text-center mb-4">
+                      <img
+                        src={capturedImage}
+                        alt="Captured"
+                        className="w-32 h-32 object-cover rounded-lg mx-auto shadow-md"
                       />
                     </div>
                   )}
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Nombre del objeto *
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.name}
+                      onChange={(e) => handleInputChange('name', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                      placeholder="Ingrese el nombre"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Precio estimado
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.price}
+                      onChange={(e) => handleInputChange('price', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                      placeholder="0.00"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Cantidad
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={formData.quantity}
+                      onChange={(e) => handleInputChange('quantity', parseInt(e.target.value) || 1)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                    />
+                  </div>
+
+                  <div className="border-t pt-4">
+                    <h3 className="text-sm font-medium text-gray-700 mb-3">Plantilla del Activo</h3>
+                    
+                    <div className="space-y-3">
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="radio"
+                          id="existing-template"
+                          name="template-choice"
+                          checked={formData.use_existing_template}
+                          onChange={() => handleInputChange('use_existing_template', true)}
+                          className="w-4 h-4 text-black focus:ring-black"
+                        />
+                        <label htmlFor="existing-template" className="text-sm text-gray-700">
+                          Usar plantilla existente
+                        </label>
+                      </div>
+                      
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="radio"
+                          id="new-template"
+                          name="template-choice"
+                          checked={!formData.use_existing_template}
+                          onChange={() => handleInputChange('use_existing_template', false)}
+                          className="w-4 h-4 text-black focus:ring-black"
+                        />
+                        <label htmlFor="new-template" className="text-sm text-gray-700">
+                          Crear nueva plantilla
+                        </label>
+                      </div>
+                    </div>
+
+                    {formData.use_existing_template ? (
+                      <div className="mt-3">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Seleccionar plantilla *
+                        </label>
+                        <select
+                          value={formData.template_id}
+                          onChange={(e) => handleInputChange('template_id', e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                        >
+                          <option value="">Seleccionar plantilla</option>
+                          {templates.map(template => (
+                            <option key={template.id} value={template.id}>
+                              {template.name} ({template.category?.name || 'Sin categoría'})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <div className="mt-3">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Categoría para nueva plantilla *
+                        </label>
+                        <select
+                          value={formData.category_id}
+                          onChange={(e) => handleInputChange('category_id', e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                        >
+                          <option value="">Seleccionar categoría</option>
+                          {categories.map(category => (
+                            <option key={category.id} value={category.id}>
+                              {category.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
                       Escuela *
                     </label>
                     <select
-                      value={selectedSchool}
-                      onChange={(e) => handleSchoolChange(e.target.value)}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={formData.school_id}
+                      onChange={(e) => {
+                        setSelectedSchool(e.target.value);
+                        handleInputChange('school_id', e.target.value);
+                        handleInputChange('classroom_id', ''); // Reset classroom
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
                     >
                       <option value="">Seleccionar escuela</option>
                       {schools.map(school => (
@@ -684,242 +804,87 @@ const FloatingAssetButton: React.FC = () => {
                       Aula *
                     </label>
                     <select
-                      name="classroom_id"
-                      value={assetData.classroom_id}
-                      onChange={handleInputChange}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={formData.classroom_id}
+                      onChange={(e) => handleInputChange('classroom_id', e.target.value)}
                       disabled={!selectedSchool}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent disabled:bg-gray-100"
                     >
                       <option value="">Seleccionar aula</option>
                       {classrooms.map(classroom => (
                         <option key={classroom.id} value={classroom.id}>
-                          {classroom.name} (Capacidad: {classroom.capacity})
+                          {classroom.name}
                         </option>
                       ))}
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Categoría *
-                    </label>
-                    <select
-                      value={selectedCategory}
-                      onChange={(e) => handleCategoryChange(e.target.value)}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  <div className="flex space-x-3 pt-4">
+                    <button
+                      onClick={handleStepBack}
+                      className="flex-1 bg-gray-500 text-white py-3 px-4 rounded-lg font-medium"
                     >
-                      <option value="">Seleccionar categoría</option>
-                      {categories.map(category => (
-                        <option key={category.id} value={category.id}>
-                          {category.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Plantilla *
-                    </label>
-                    <select
-                      name="template_id"
-                      value={assetData.template_id}
-                      onChange={handleInputChange}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      disabled={!selectedCategory}
+                      Atrás
+                    </button>
+                    <button
+                      onClick={createAsset}
+                      disabled={isLoading}
+                      className="flex-1 bg-black text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
                     >
-                      <option value="">Seleccionar plantilla</option>
-                      {templates
-                        .filter(template => template.category_id === selectedCategory)
-                        .map(template => (
-                        <option key={template.id} value={template.id}>
-                          {template.name} - {template.manufacturer}
-                        </option>
-                      ))}
-                    </select>
+                      {isLoading ? (
+                        <Loader className="w-5 h-5 animate-spin mr-2" />
+                      ) : (
+                        <Save className="w-5 h-5 mr-2" />
+                      )}
+                      Crear Activo
+                    </button>
                   </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Número de Serie
-                    </label>
-                    <input
-                      type="text"
-                      name="serial_number"
-                      value={assetData.serial_number}
-                      onChange={handleInputChange}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Ingrese número de serie"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Fecha de Compra
-                    </label>
-                    <input
-                      type="date"
-                      name="purchase_date"
-                      value={assetData.purchase_date}
-                      onChange={handleInputChange}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Valor Estimado ($)
-                    </label>
-                    <input
-                      type="number"
-                      name="value_estimate"
-                      value={assetData.value_estimate}
-                      onChange={handleInputChange}
-                      step="0.01"
-                      min="0"
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="0.00"
-                    />
-                  </div>
-
-                  <button
-                    onClick={createAsset}
-                    disabled={isLoading || !assetData.template_id || !assetData.classroom_id}
-                    className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors"
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                        <span>Creando...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check className="h-5 w-5" />
-                        <span>Crear Activo</span>
-                      </>
-                    )}
-                  </button>
                 </div>
               )}
 
-              {/* Resultado QR */}
-              {currentStep === 'qr-result' && qrData && (
+              {/* QR Step */}
+              {currentStep === 'qr' && qrData && (
                 <div className="space-y-4 text-center">
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <Check className="h-8 w-8 text-green-600 mx-auto mb-2" />
-                    <p className="text-green-800 font-medium">¡Activo creado exitosamente!</p>
-                    <p className="text-sm text-green-600 mt-1">
-                      {qrData.template.name} - {qrData.serial_number}
-                    </p>
+                  <div className="bg-green-50 p-4 rounded-lg">
+                    <Check className="w-12 h-12 text-green-500 mx-auto mb-2" />
+                    <h3 className="text-lg font-medium text-green-800">¡Activo Creado!</h3>
+                    <p className="text-green-600">El código QR ha sido generado</p>
                   </div>
 
-                  {qrData.qr_code?.qr_url && (
-                    <div className="bg-white p-4 rounded-lg border">
-                      <img 
-                        src={qrData.qr_code.qr_url} 
-                        alt="Código QR"
-                        className="w-48 h-48 mx-auto border border-gray-200 rounded"
-                      />
+                  <div className="bg-gray-100 p-4 rounded-lg">
+                    <div className="w-32 h-32 bg-white border-2 border-gray-300 mx-auto mb-3 flex items-center justify-center">
+                      <span className="text-xs text-gray-500">QR Code</span>
                     </div>
-                  )}
-
-                  <div className="flex items-center justify-center space-x-2 text-sm text-gray-600">
-                    <Bluetooth className={`h-4 w-4 ${printerStatus === 'connected' ? 'text-green-600' : 'text-gray-400'}`} />
-                    <span>
-                      Impresora: {printerStatus === 'connected' ? 'Conectada' : 'Desconectada'}
-                    </span>
+                    <h4 className="font-medium">{qrData.name}</h4>
+                    <p className="text-sm text-gray-600">{qrData.school} - {qrData.classroom}</p>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3">
-                    {printerStatus !== 'connected' && (
-                      <button
-                        onClick={connectBluetoothPrinter}
-                        disabled={printerStatus === 'connecting'}
-                        className="flex items-center justify-center space-x-2 py-2 px-4 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        <Bluetooth className="h-4 w-4" />
-                        <span>{printerStatus === 'connecting' ? 'Conectando...' : 'Conectar Impresora'}</span>
-                      </button>
-                    )}
-                    
+                  <div className="space-y-3">
+                    <button
+                      onClick={printQR}
+                      disabled={isLoading}
+                      className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
+                    >
+                      {isLoading ? (
+                        <Loader className="w-5 h-5 animate-spin mr-2" />
+                      ) : (
+                        <Printer className="w-5 h-5 mr-2" />
+                      )}
+                      Imprimir QR
+                    </button>
+
                     <button
                       onClick={downloadQR}
-                      className="flex items-center justify-center space-x-2 py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      className="w-full bg-gray-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
                     >
-                      <Download className="h-4 w-4" />
-                      <span>Descargar QR</span>
+                      <Download className="w-5 h-5 mr-2" />
+                      Descargar QR
                     </button>
-                    
-                    {printerStatus === 'connected' && (
-                      <button
-                        onClick={() => setSuccess('Enviando a impresión...')}
-                        className="flex items-center justify-center space-x-2 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                      >
-                        <Printer className="h-4 w-4" />
-                        <span>Imprimir QR</span>
-                      </button>
-                    )}
-                    
-                    <button
-                      onClick={() => {
-                        resetState();
-                        setIsOpen(true);
-                      }}
-                      className="flex items-center justify-center space-x-2 py-2 px-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span>Crear Otro Activo</span>
-                    </button>
-                  </div>
-                </div>
-              )}
 
-              {/* Scanner QR */}
-              {currentStep === 'scanner' && (
-                <div className="space-y-4">
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-                    <QrCode className="h-8 w-8 text-blue-600 mx-auto mb-2" />
-                    <p className="text-blue-800 font-medium">Funcionalidad en desarrollo</p>
-                    <p className="text-sm text-blue-600 mt-1">
-                      El escáner QR estará disponible próximamente
-                    </p>
-                  </div>
-                  
-                  <button
-                    onClick={() => setCurrentStep('menu')}
-                    className="w-full py-2 px-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    Volver al Menú
-                  </button>
-                </div>
-              )}
-
-              {/* Mensajes de error y éxito */}
-              {error && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start space-x-2">
-                  <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-red-800 text-sm">{error}</p>
                     <button
-                      onClick={() => setError(null)}
-                      className="text-red-600 text-xs underline mt-1"
+                      onClick={resetForm}
+                      className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium"
                     >
-                      Cerrar
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {success && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-start space-x-2">
-                  <Check className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-green-800 text-sm">{success}</p>
-                    <button
-                      onClick={() => setSuccess(null)}
-                      className="text-green-600 text-xs underline mt-1"
-                    >
-                      Cerrar
+                      Crear Otro Activo
                     </button>
                   </div>
                 </div>
@@ -928,11 +893,8 @@ const FloatingAssetButton: React.FC = () => {
           </div>
         </div>
       )}
-
-      {/* Canvas oculto para captura */}
-      <canvas ref={canvasRef} className="hidden" />
     </>
   );
 };
 
-export default FloatingAssetButton;
+export default AssetCreatorFAB;
