@@ -119,7 +119,7 @@ const LoginForm: React.FC = () => {
           <div className="mx-auto mb-6 flex justify-center">
             {!logoError ? (
               <img
-                src="https://app-web-final-qr.vercel.app/issa.png"
+                src="https://issa-qr.vercel.app/issa.png"
                 alt="Logo del Sistema"
                 className="h-20 w-auto max-w-full sm:h-24"
                 onError={handleLogoError}
@@ -268,7 +268,7 @@ const LoginForm: React.FC = () => {
         {/* Footer */}
         <div className="mt-6 sm:mt-8 text-center">
           <p className="text-xs sm:text-sm text-gray-500 font-medium">
-            Scanly © 2025 - Sistema Educativo
+            ISSA QR © 2025 - Sistema Educativo
           </p>
         </div>
       </div>

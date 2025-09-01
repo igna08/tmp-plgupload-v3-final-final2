@@ -454,52 +454,184 @@ const AssetCreatorFAB: React.FC = () => {
     }
   };
 
-  const printQR = async (): Promise<void> => {
-    if (!qrData) return;
+const printQR = async (): Promise<void> => {
+  if (!qrData) return;
+  
+  if (!bluetoothPrinter) {
+    await connectBluetooth();
+    if (!bluetoothPrinter) return;
+  }
+
+  try {
+    setIsLoading(true);
+
+    // Convertir QR URL a base64 si no lo es ya
+    let base64Image = qrData.qr_url;
     
-    if (!bluetoothPrinter) {
-      await connectBluetooth();
-      if (!bluetoothPrinter) return;
+    if (!qrData.qr_url.startsWith('data:')) {
+      // Fetch the QR image and convert to base64
+      const response = await fetch(qrData.qr_url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      const blob = await response.blob();
+      base64Image = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
     }
 
-    try {
-      setIsLoading(true);
+    // Preparar comandos básicos
+    const commands: Uint8Array[] = [];
+    
+    // Initialize printer
+    commands.push(new Uint8Array([0x1B, 0x40])); // ESC @
+    
+    // Center align
+    commands.push(new Uint8Array([0x1B, 0x61, 0x01])); // ESC a 1
+    
+    // Print asset name
+    const nameBytes = new TextEncoder().encode(`${qrData.name}\n`);
+    commands.push(nameBytes);
+    
+    // Print school and classroom
+    const locationBytes = new TextEncoder().encode(`${qrData.school} - ${qrData.classroom}\n\n`);
+    commands.push(locationBytes);
 
-      // For thermal printers, we need to send the actual QR data or URL
-      // This is a simplified version - you might need to adjust based on your printer model
-      const printData = `
-${qrData.name}
-${qrData.school} - ${qrData.classroom}
-QR: ${qrData.qr_url}
+    // Usar función automática para imprimir imagen base64
+    const imageCommands = await printImageBase64(base64Image);
+    commands.push(...imageCommands);
+    
+    // Line feeds after QR
+    commands.push(new Uint8Array([0x0A, 0x0A]));
+    
+    // Print asset ID
+    const idBytes = new TextEncoder().encode(`ID: ${qrData.asset_id}\n`);
+    commands.push(idBytes);
+    
+    // Feed paper and cut
+    commands.push(new Uint8Array([0x0A, 0x0A, 0x0A]));
+    commands.push(new Uint8Array([0x1D, 0x56, 0x42, 0x00])); // GS V B (partial cut)
 
-      `;
-
-      const encoder = new TextEncoder();
-      const commands: number[] = [];
-      
-      // Initialize printer
-      commands.push(0x1B, 0x40);
-      // Center align
-      commands.push(0x1B, 0x61, 0x01);
-      
-      // Add the text data
-      commands.push(...encoder.encode(printData));
-      
-      // Feed paper and cut
-      commands.push(0x0A, 0x0A, 0x0A);
-      commands.push(0x1B, 0x69);
-
-      await bluetoothPrinter.characteristic.writeValue(new Uint8Array(commands));
-
-      setStatus({ type: 'success', message: 'QR impreso exitosamente' });
-    } catch (error) {
-      setStatus({ type: 'error', message: 'Error al imprimir QR' });
-      console.error('Print error:', error);
-    } finally {
-      setIsLoading(false);
+    // Send commands with chunking automático
+    for (const command of commands) {
+      await sendChunked(command);
     }
-  };
 
+    setStatus({ type: 'success', message: 'QR impreso exitosamente' });
+  } catch (error) {
+    setStatus({ type: 'error', message: 'Error al imprimir QR' });
+    console.error('Print error:', error);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+// Función que simula printImageBase64 con chunking por bloques de altura
+const printImageBase64 = async (base64: string): Promise<Uint8Array[]> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      // Ancho máximo para impresora 80mm
+      const printerWidth = 576;
+      const maxQRSize = 200; // Tamaño deseado del QR
+      const qrSize = Math.min(maxQRSize, printerWidth);
+      
+      // Asegurar que sea múltiplo de 8
+      canvas.width = Math.ceil(qrSize / 8) * 8;
+      canvas.height = canvas.width; // QR cuadrado
+      
+      if (!ctx) {
+        resolve([]);
+        return;
+      }
+      
+      // Fondo blanco y dibujar imagen
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const commands: Uint8Array[] = [];
+      
+      // Convertir a bitmap
+      const bytesPerLine = Math.ceil(canvas.width / 8);
+      const bitmapData = new Uint8Array(bytesPerLine * canvas.height);
+      
+      for (let y = 0; y < canvas.height; y++) {
+        for (let x = 0; x < canvas.width; x++) {
+          const pixelIndex = (y * canvas.width + x) * 4;
+          const r = imageData.data[pixelIndex];
+          const g = imageData.data[pixelIndex + 1];
+          const b = imageData.data[pixelIndex + 2];
+          
+          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+          if (gray < 128) {
+            const byteIndex = y * bytesPerLine + Math.floor(x / 8);
+            const bitIndex = 7 - (x % 8);
+            bitmapData[byteIndex] |= (1 << bitIndex);
+          }
+        }
+      }
+      
+      // Enviar imagen en bloques de 24 píxeles de alto (estándar ESC/POS)
+      const blockHeight = 24;
+      
+      for (let y = 0; y < canvas.height; y += blockHeight) {
+        const currentBlockHeight = Math.min(blockHeight, canvas.height - y);
+        const slice = bitmapData.slice(y * bytesPerLine, (y + currentBlockHeight) * bytesPerLine);
+        
+        // GS v 0 para cada bloque
+        const xL = bytesPerLine & 0xFF;
+        const xH = (bytesPerLine >> 8) & 0xFF;
+        const yL = currentBlockHeight & 0xFF;
+        const yH = (currentBlockHeight >> 8) & 0xFF;
+        
+        // Comando GS v 0 para este bloque
+        commands.push(new Uint8Array([0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH]));
+        
+        // Datos del bloque (ya en chunks pequeños)
+        const chunkSize = 200; // Chunks más pequeños para Bluetooth
+        for (let i = 0; i < slice.length; i += chunkSize) {
+          const chunk = slice.slice(i, i + chunkSize);
+          commands.push(chunk);
+        }
+      }
+      
+      resolve(commands);
+    };
+    
+    img.src = base64;
+  });
+};
+
+// Función para envío optimizado para impresoras ESC/POS
+const sendChunked = async (command: Uint8Array): Promise<void> => {
+  // Para comandos de cabecera (GS v 0) enviar directamente
+  if (command.length <= 8) {
+    const buffer = new ArrayBuffer(command.length);
+    const view = new Uint8Array(buffer);
+    view.set(command);
+    
+    await bluetoothPrinter!.characteristic.writeValue(buffer);
+    await new Promise(resolve => setTimeout(resolve, 10));
+  } else {
+    // Para datos de imagen, ya vienen pre-chunkeados por printImageBase64
+    const buffer = new ArrayBuffer(command.length);
+    const view = new Uint8Array(buffer);
+    view.set(command);
+    
+    await bluetoothPrinter!.characteristic.writeValue(buffer);
+    await new Promise(resolve => setTimeout(resolve, 30));
+  }
+};
+
+// Ya no necesitamos esta función, está integrada en printImageBase64
   const downloadQR = async (): Promise<void> => {
     if (!qrData || !qrData.qr_url) return;
 

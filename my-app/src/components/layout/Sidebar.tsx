@@ -97,9 +97,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onMobileClose, currentP
   const navItems = [
     { 
       label: 'Dashboard', 
-      href: '/dashboard', 
+      href: '/', 
       icon: <Home size={20} />, 
-      isActive: currentPath === '/dashboard' || currentPath === '/'
+      isActive: currentPath === '/' || currentPath === '/'
     },
     { 
       label: 'Escuelas', 
