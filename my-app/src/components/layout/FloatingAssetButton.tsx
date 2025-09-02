@@ -467,7 +467,6 @@ const printQR = async (): Promise<void> => {
 
     // Convertir QR URL a base64 si no lo es ya
     let base64Image = qrData.qr_url;
-
     if (!qrData.qr_url.startsWith('data:')) {
       const response = await fetch(qrData.qr_url, {
         headers: { 'Authorization': `Bearer ${token}` },
@@ -482,40 +481,35 @@ const printQR = async (): Promise<void> => {
 
     const commands: Uint8Array[] = [];
 
-    // Reset
-    commands.push(new Uint8Array([0x1B, 0x40])); 
+    // Reset impresora
+    commands.push(new Uint8Array([0x1B, 0x40]));
 
-    // Layout horizontal: QR a la izquierda (120px), texto a la derecha
-    const qrCommands = await printCompactQRSticker(base64Image, 120);
+    // QR más grande (mitad de la etiqueta, aprox 200px)
+    const qrCommands = await printCompactQRSticker(base64Image, 200);
     commands.push(...qrCommands);
 
-    // Mover un poco a la derecha para texto (ESC $ nL nH → set absolute position)
-    const marginLeft = 130; // espacio desde borde para que texto quede al costado
-    commands.push(new Uint8Array([0x1B, 0x24, marginLeft & 0xFF, (marginLeft >> 8) & 0xFF]));
+    // --- Texto rotado a 90° ---
+    commands.push(new Uint8Array([0x1B, 0x56, 0x01])); // Rotar texto 90°
+    commands.push(new Uint8Array([0x1B, 0x61, 0x00])); // Alineado izquierda
 
-    // Texto alineado a la izquierda dentro de la zona derecha
-    commands.push(new Uint8Array([0x1B, 0x61, 0x00])); 
-    commands.push(new Uint8Array([0x1B, 0x21, 0x01])); 
-
-    // Escuela
+    // Texto en vertical (costado)
     const school = qrData.school.slice(0, 20);
     commands.push(new TextEncoder().encode(`${school}\n`));
 
-    // Aula
     const classroom = qrData.classroom.slice(0, 20);
     commands.push(new TextEncoder().encode(`${classroom}\n`));
 
-    // Nombre del activo
     const assetName = qrData.name.slice(0, 20);
     commands.push(new TextEncoder().encode(`${assetName}\n`));
 
-    // Salto de línea final
-    commands.push(new Uint8Array([0x0A]));
+    // Volver a rotación normal (por si después imprime más)
+    commands.push(new Uint8Array([0x1B, 0x56, 0x00])); 
 
-    // Corte
+    // Salto y corte
+    commands.push(new Uint8Array([0x0A]));
     commands.push(new Uint8Array([0x1D, 0x56, 0x42, 0x00]));
 
-    // Enviar comandos
+    // Enviar a la impresora
     for (const command of commands) {
       await sendChunked(command);
     }
@@ -528,6 +522,7 @@ const printQR = async (): Promise<void> => {
     setIsLoading(false);
   }
 };
+
 
 // Generador QR compacto (con tamaño ajustable)
 const printCompactQRSticker = async (base64: string, size: number = 120): Promise<Uint8Array[]> => {
