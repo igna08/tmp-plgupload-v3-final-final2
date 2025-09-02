@@ -1,11 +1,8 @@
-"use client"; // Added to use usePathname
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import AppLayout from "@/components/layout/AppLayout";
 import { AuthProvider } from "@/context/AuthContext";
-import FloatingAssetButton from '@/components/layout/FloatingAssetButton';
-import { usePathname } from 'next/navigation';
+import ClientLayout from "../components/layout/AppLayout";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,8 +14,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// Move metadata outside of component since it's now a client component
-const metadata: Metadata = {
+export const metadata: Metadata = {
   metadataBase: new URL("https://issa-qr.vercel.app"),
   manifest: '/manifest.json',
 
@@ -61,21 +57,15 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const pathname = usePathname();
-  
-  // Define routes where floating button should be hidden
-  const authRoutes = ['/login', '/register', '/register/invitation'];
-  const isAuthPage = authRoutes.includes(pathname);
-
   return (
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-neutralLighter`}
       >
         <AuthProvider>
-          <AppLayout>{children}</AppLayout>
-          {/* Only show floating button if not on auth pages */}
-          {!isAuthPage && <FloatingAssetButton />}
+          <ClientLayout>
+            {children}
+          </ClientLayout>
         </AuthProvider>
       </body>
     </html>
