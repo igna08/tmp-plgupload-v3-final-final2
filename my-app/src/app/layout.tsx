@@ -20,6 +20,8 @@ const geistMono = Geist_Mono({
 // Move metadata outside of component since it's now a client component
 const metadata: Metadata = {
   metadataBase: new URL("https://issa-qr.vercel.app"),
+  manifest: '/manifest.json',
+
   title: "ISSA - Sistema de Gestión de QR Escolar",
   description: "Plataforma de gestión de QR para instituciones educativas, facilitando la organización y el control escolar.",
   keywords: [

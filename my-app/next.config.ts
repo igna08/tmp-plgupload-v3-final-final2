@@ -1,10 +1,19 @@
 import type { NextConfig } from "next";
+import withPWAInit from "next-pwa";
 
-const nextConfig: NextConfig = {
+const withPWA = withPWAInit({
+  dest: "public",          // dónde guarda el service worker
+  register: true,          // registra automáticamente el SW
+  skipWaiting: true,       // actualiza sin esperar
+  disable: process.env.NODE_ENV === "development", // desactiva en dev
+});
+
+const nextConfig = {
   eslint: {
-    ignoreDuringBuilds: true, // ✅ Esto desactiva los errores de ESLint en la build
+    ignoreDuringBuilds: true, // no corta la build por ESLint
   },
-  // Otras opciones que quieras agregar
+  reactStrictMode: true,
+  swcMinify: true,
 };
 
-export default nextConfig;
+export default withPWA(nextConfig);
