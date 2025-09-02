@@ -732,8 +732,10 @@ const testPrinterConnection = async (): Promise<void> => {
     
     // Imprimir línea de prueba
     const testText = new TextEncoder().encode('TEST OK\n\n\n');
-    await bluetoothPrinter.characteristic.writeValue(testText.buffer);
-    
+const textBuffer = new ArrayBuffer(testText.length);
+const textView = new Uint8Array(textBuffer);
+textView.set(testText);
+await bluetoothPrinter.characteristic.writeValue(textBuffer);    
     setStatus({ type: 'success', message: 'Prueba de impresora exitosa' });
   } catch (error) {
     throw new Error('Fallo en prueba de impresora');
