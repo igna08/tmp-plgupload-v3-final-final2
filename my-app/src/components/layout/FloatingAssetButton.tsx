@@ -454,7 +454,7 @@ const AssetCreatorFAB: React.FC = () => {
     }
   };
 
-const printQR = async (): Promise<void> => {
+ const printQR = async (): Promise<void> => {
   if (!qrData) return;
 
   if (!bluetoothPrinter) {
@@ -465,11 +465,11 @@ const printQR = async (): Promise<void> => {
   try {
     setIsLoading(true);
 
-    // Convertir QR URL a base64 si no lo es ya
+    // --- Obtener QR en base64 ---
     let base64Image = qrData.qr_url;
-    if (!qrData.qr_url.startsWith('data:')) {
+    if (!qrData.qr_url.startsWith("data:")) {
       const response = await fetch(qrData.qr_url, {
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
       const blob = await response.blob();
       base64Image = await new Promise<string>((resolve) => {
@@ -484,15 +484,15 @@ const printQR = async (): Promise<void> => {
     // Reset impresora
     commands.push(new Uint8Array([0x1B, 0x40]));
 
-    // QR más grande (mitad de la etiqueta, aprox 200px)
+    // --- Imprimir QR ---
     const qrCommands = await printCompactQRSticker(base64Image, 200);
     commands.push(...qrCommands);
 
-    // --- Texto rotado a 90° ---
-    commands.push(new Uint8Array([0x1B, 0x56, 0x01])); // Rotar texto 90°
-    commands.push(new Uint8Array([0x1B, 0x61, 0x00])); // Alineado izquierda
+    // --- Rotar texto 90° ---
+    commands.push(new Uint8Array([0x1B, 0x54, 0x01])); // ESC T 1 → rotación 90°
+    commands.push(new Uint8Array([0x1B, 0x61, 0x00])); // Alinear izquierda
 
-    // Texto en vertical (costado)
+    // Texto en vertical (al costado del QR)
     const school = qrData.school.slice(0, 20);
     commands.push(new TextEncoder().encode(`${school}\n`));
 
@@ -502,22 +502,22 @@ const printQR = async (): Promise<void> => {
     const assetName = qrData.name.slice(0, 20);
     commands.push(new TextEncoder().encode(`${assetName}\n`));
 
-    // Volver a rotación normal (por si después imprime más)
-    commands.push(new Uint8Array([0x1B, 0x56, 0x00])); 
+    // --- Volver a rotación normal ---
+    commands.push(new Uint8Array([0x1B, 0x54, 0x00])); // ESC T 0 → normal
 
-    // Salto y corte
+    // Salto de línea y corte de papel
     commands.push(new Uint8Array([0x0A]));
     commands.push(new Uint8Array([0x1D, 0x56, 0x42, 0x00]));
 
-    // Enviar a la impresora
+    // --- Enviar a la impresora ---
     for (const command of commands) {
       await sendChunked(command);
     }
 
-    setStatus({ type: 'success', message: 'Pegatina QR impresa exitosamente' });
+    setStatus({ type: "success", message: "Pegatina QR impresa exitosamente" });
   } catch (error) {
-    setStatus({ type: 'error', message: 'Error al imprimir pegatina QR' });
-    console.error('Print error:', error);
+    setStatus({ type: "error", message: "Error al imprimir pegatina QR" });
+    console.error("Print error:", error);
   } finally {
     setIsLoading(false);
   }
