@@ -1,27 +1,51 @@
 {
   "name": "Issa QR",
   "short_name": "Issa QR",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "description": "Aplicación para generar y escanear códigos QR de manera rápida y sencilla.",
+  "lang": "es-AR",
+  "dir": "ltr",
+  "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/apple-icon.png",
+      "src": "apple-icon.png",
       "sizes": "180x180",
       "type": "image/png",
       "purpose": "maskable any"
     },
     {
-      "src": "/icon1.png",
+      "src": "icon1.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable any"
     },
     {
-      "src": "/icon0.svg",
+      "src": "icon0.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
     }
   ],
-  "theme_color": "#ffffff",
-  "background_color": "#ffffff",
-  "display": "standalone"
-}
+  "screenshots": [
+    {
+      "src": "screenshot1.png",
+      "sizes": "540x960",
+      "type": "image/png"
+    },
+    {
+      "src": "screenshot2.png",
+      "sizes": "540x960",
+      "type": "image/png"
+    }
+  ],
+  "categories" : ["utilities", "productivity", "tools"],
+    "related_applications": [],
+    "serviceworker": {
+      "src": "sw.js"
+    }
+  }
