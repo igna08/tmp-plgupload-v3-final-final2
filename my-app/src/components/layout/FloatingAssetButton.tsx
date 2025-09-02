@@ -482,204 +482,261 @@ const printQR = async (): Promise<void> => {
       });
     }
 
-    // Preparar comandos para pegatina 2cm alto x 4cm ancho
+    // Preparar comandos para pegatina 5cm ancho x 2.5cm alto
     const commands: Uint8Array[] = [];
     
-    // Initialize printer
-    commands.push(new Uint8Array([0x1B, 0x40])); // ESC @
+    // Inicializar impresora
+    commands.push(new Uint8Array([0x1B, 0x40])); // ESC @ - Reset
     
-    // Configurar tamaño de papel (ancho 5cm = ~142 puntos para 80mm paper width)
-    // Para 5cm de ancho necesitamos centrar en papel de 80mm
-    const stickerWidthDots = 142; // 5cm ≈ 142 dots a 72dpi
-    const paperWidthDots = 576; // 80mm paper
+    // Configurar para pegatina de 5cm de ancho
+    // 5cm ≈ 189 puntos a 96dpi (estándar térmico)
+    const stickerWidthDots = 189;
+    const paperWidthDots = 576; // Papel de 80mm
     const leftMargin = Math.floor((paperWidthDots - stickerWidthDots) / 2);
     
-    // Establecer margen izquierdo para centrar pegatina de 4cm
-    commands.push(new Uint8Array([0x1B, 0x6C, leftMargin & 0xFF])); // ESC l (set left margin)
+    // Establecer márgenes para centrar la pegatina
+    commands.push(new Uint8Array([0x1B, 0x6C, leftMargin & 0xFF])); // Margen izquierdo
+    commands.push(new Uint8Array([0x1B, 0x51, (leftMargin + stickerWidthDots) & 0xFF])); // Margen derecho
     
-    // Configurar área de impresión (ancho de 5cm)
-    commands.push(new Uint8Array([0x1B, 0x51, stickerWidthDots & 0xFF])); // ESC Q (set right margin)
+    // ============ LAYOUT OPTIMIZADO PARA 5x2.5cm ============
     
-    // ============ LAYOUT PARA PEGATINA 2.5x5CM ============
-    // Más espacio disponible: Layout horizontal optimizado
-    // Fila superior: Escuela + QR (derecha)
-    // Fila media: Aula + Nombre del activo  
-    // Fila inferior: ID (centrado)
+    // **LÍNEA 1: ESCUELA (izquierda) + QR (derecha)**
+    commands.push(new Uint8Array([0x1B, 0x61, 0x00])); // Alinear izquierda
+    commands.push(new Uint8Array([0x1B, 0x21, 0x01])); // Fuente pequeña y condensada
     
-    // **LÍNEA 1: ESCUELA (izquierda)**
-    commands.push(new Uint8Array([0x1B, 0x61, 0x00])); // Align left
-    commands.push(new Uint8Array([0x1B, 0x21, 0x01])); // Font pequeño y compacto
-    
-    const schoolBytes = new TextEncoder().encode(qrData.school.substring(0, 15)); // Máximo 15 chars para 5cm
+    // Nombre de la escuela (máximo 20 caracteres para 5cm)
+    const schoolText = qrData.school.substring(0, 20);
+    const schoolBytes = new TextEncoder().encode(schoolText);
     commands.push(schoolBytes);
     
-    // **QR CODE (derecha de la misma línea)**
-    // Posicionar cursor para QR en la derecha (más espacio en 5cm)
-    commands.push(new Uint8Array([0x1B, 0x24, 80, 0])); // ESC $ - position cursor más a la derecha
+    // Mover cursor para posicionar QR a la derecha
+    commands.push(new Uint8Array([0x1B, 0x24, 120, 0])); // Posición horizontal para QR
     
-    // Imprimir QR un poco más grande (50x50 dots para 5cm de ancho)
-    const qrCommands = await printCompactQR(base64Image, 50); // 50x50 dots QR
+    // **QR CODE (60x60 dots para buena legibilidad en 5cm)**
+    const qrCommands = await printOptimizedQR(base64Image, 60);
     commands.push(...qrCommands);
     
     // **LÍNEA 2: AULA**
     commands.push(new Uint8Array([0x0A])); // Nueva línea
-    commands.push(new Uint8Array([0x1B, 0x61, 0x00])); // Align left
-    commands.push(new Uint8Array([0x1B, 0x21, 0x01])); // Font pequeño
+    commands.push(new Uint8Array([0x1B, 0x61, 0x00])); // Alinear izquierda
+    commands.push(new Uint8Array([0x1B, 0x21, 0x01])); // Fuente pequeña
     
-    const classroomBytes = new TextEncoder().encode(qrData.classroom.substring(0, 15)); // Más caracteres para 5cm
+    const classroomText = `Aula: ${qrData.classroom}`.substring(0, 20);
+    const classroomBytes = new TextEncoder().encode(classroomText);
     commands.push(classroomBytes);
     
     // **LÍNEA 3: NOMBRE DEL ACTIVO (centrado)**
     commands.push(new Uint8Array([0x0A])); // Nueva línea
-    commands.push(new Uint8Array([0x1B, 0x61, 0x01])); // Center align
-    commands.push(new Uint8Array([0x1B, 0x21, 0x00])); // Font normal pero compacto
+    commands.push(new Uint8Array([0x1B, 0x61, 0x01])); // Centrar
+    commands.push(new Uint8Array([0x1B, 0x21, 0x00])); // Fuente normal
     
-    const nameBytes = new TextEncoder().encode(qrData.name.substring(0, 22)); // Máximo 22 chars para 5cm
+    const assetName = qrData.name.substring(0, 25); // 25 caracteres máximo
+    const nameBytes = new TextEncoder().encode(assetName);
     commands.push(nameBytes);
     
     // **LÍNEA 4: ID (centrado)**
     commands.push(new Uint8Array([0x0A])); // Nueva línea
-    commands.push(new Uint8Array([0x1B, 0x61, 0x01])); // Center align
-    commands.push(new Uint8Array([0x1B, 0x21, 0x01])); // Font pequeño
+    commands.push(new Uint8Array([0x1B, 0x61, 0x01])); // Centrar
+    commands.push(new Uint8Array([0x1B, 0x21, 0x01])); // Fuente pequeña
     
-    const idBytes = new TextEncoder().encode(`ID: ${qrData.asset_id}`);
+    const idText = `ID: ${qrData.asset_id}`;
+    const idBytes = new TextEncoder().encode(idText);
     commands.push(idBytes);
     
-    // **ALIMENTACIÓN Y CORTE PARA PEGATINA SIN SENSOR**
-    // Alimentar papel equivalente a 2.5cm (altura de pegatina)
-    const stickerHeightLines = 10; // 2.5cm ≈ 10 líneas de alimentación
-    for (let i = 0; i < stickerHeightLines; i++) {
-      commands.push(new Uint8Array([0x0A])); // Line feed
+    // **ALIMENTACIÓN PARA COMPLETAR ALTURA DE 2.5cm**
+    // 2.5cm ≈ 8-10 líneas de alimentación según densidad
+    const feedLines = 8;
+    for (let i = 0; i < feedLines; i++) {
+      commands.push(new Uint8Array([0x0A])); // Avance de línea
     }
     
-    // CORTE COMPLETO (ya que no hay sensor de posición)
-    commands.push(new Uint8Array([0x1D, 0x56, 0x41])); // GS V A (full cut)
+    // **CORTE COMPLETO**
+    commands.push(new Uint8Array([0x1D, 0x56, 0x00])); // GS V 0 - Corte completo
     
-    // Alimentación adicional para preparar siguiente pegatina
-    commands.push(new Uint8Array([0x0A, 0x0A]));
+    // Alimentación adicional para separar de la siguiente pegatina
+    commands.push(new Uint8Array([0x0A, 0x0A, 0x0A]));
     
-    // Reset de márgenes para próxima impresión
-    commands.push(new Uint8Array([0x1B, 0x6C, 0x00])); // Reset left margin
-    commands.push(new Uint8Array([0x1B, 0x51, 0xFF])); // Reset right margin
+    // Resetear configuraciones
+    commands.push(new Uint8Array([0x1B, 0x6C, 0x00])); // Reset margen izquierdo
+    commands.push(new Uint8Array([0x1B, 0x51, 0xFF])); // Reset margen derecho
 
-    // Enviar comandos con chunking
+    // Enviar todos los comandos
     for (const command of commands) {
-      await sendChunked(command);
+      await sendOptimizedChunked(command);
     }
 
-    setStatus({ type: 'success', message: 'Pegatina QR impresa exitosamente' });
+    setStatus({ type: 'success', message: 'Pegatina QR impresa correctamente' });
+    
   } catch (error) {
-    setStatus({ type: 'error', message: 'Error al imprimir pegatina QR' });
-    console.error('Print error:', error);
+    setStatus({ type: 'error', message: 'Error al imprimir: ' + (error as Error).message });
+    console.error('Error de impresión:', error);
   } finally {
     setIsLoading(false);
   }
 };
 
-// Función para imprimir QR compacto para pegatinas de 2.5x5cm
-const printCompactQR = async (base64: string, qrSize: number = 50): Promise<Uint8Array[]> => {
-  return new Promise((resolve) => {
+// Función optimizada para generar QR de alta calidad
+const printOptimizedQR = async (base64: string, qrSize: number = 60): Promise<Uint8Array[]> => {
+  return new Promise((resolve, reject) => {
     const img = new Image();
+    
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      
-      // QR compacto para pegatina
-      canvas.width = Math.ceil(qrSize / 8) * 8; // Múltiplo de 8
-      canvas.height = canvas.width;
-      
-      if (!ctx) {
-        resolve([]);
-        return;
-      }
-      
-      // Fondo blanco y dibujar QR
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const commands: Uint8Array[] = [];
-      
-      // Convertir a bitmap para ESC/POS
-      const bytesPerLine = Math.ceil(canvas.width / 8);
-      const totalBytes = bytesPerLine * canvas.height;
-      const bitmapData = new Uint8Array(totalBytes);
-      
-      for (let y = 0; y < canvas.height; y++) {
-        for (let x = 0; x < canvas.width; x++) {
-          const pixelIndex = (y * canvas.width + x) * 4;
-          const r = imageData.data[pixelIndex];
-          const g = imageData.data[pixelIndex + 1];
-          const b = imageData.data[pixelIndex + 2];
-          
-          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-          if (gray < 128) { // Pixel negro
-            const byteIndex = y * bytesPerLine + Math.floor(x / 8);
-            const bitIndex = 7 - (x % 8);
-            bitmapData[byteIndex] |= (1 << bitIndex);
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        if (!ctx) {
+          reject(new Error('No se pudo crear contexto de canvas'));
+          return;
+        }
+        
+        // Asegurar que el tamaño sea múltiplo de 8 para alineación de bytes
+        const alignedSize = Math.ceil(qrSize / 8) * 8;
+        canvas.width = alignedSize;
+        canvas.height = alignedSize;
+        
+        // Fondo blanco para contraste
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Dibujar QR escalado y centrado
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        // Obtener datos de imagen
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const commands: Uint8Array[] = [];
+        
+        // Convertir a formato bitmap ESC/POS
+        const bytesPerLine = Math.ceil(canvas.width / 8);
+        const bitmapData = new Uint8Array(bytesPerLine * canvas.height);
+        
+        // Procesar píxeles
+        for (let y = 0; y < canvas.height; y++) {
+          for (let x = 0; x < canvas.width; x++) {
+            const pixelIndex = (y * canvas.width + x) * 4;
+            const r = imageData.data[pixelIndex];
+            const g = imageData.data[pixelIndex + 1];
+            const b = imageData.data[pixelIndex + 2];
+            
+            // Conversión a escala de grises con umbral
+            const gray = (r * 0.299 + g * 0.587 + b * 0.114);
+            
+            if (gray < 128) { // Píxel negro
+              const byteIndex = y * bytesPerLine + Math.floor(x / 8);
+              const bitIndex = 7 - (x % 8);
+              bitmapData[byteIndex] |= (1 << bitIndex);
+            }
           }
         }
+        
+        // Comando GS v 0 para imagen bitmap
+        const widthLow = bytesPerLine & 0xFF;
+        const widthHigh = (bytesPerLine >> 8) & 0xFF;
+        const heightLow = canvas.height & 0xFF;
+        const heightHigh = (canvas.height >> 8) & 0xFF;
+        
+        // Header del comando
+        commands.push(new Uint8Array([
+          0x1D, 0x76, 0x30, 0x00, // GS v 0 0
+          widthLow, widthHigh,     // Ancho en bytes
+          heightLow, heightHigh    // Alto en píxeles
+        ]));
+        
+        // Dividir datos de bitmap en chunks manejables
+        const chunkSize = 128;
+        for (let i = 0; i < bitmapData.length; i += chunkSize) {
+          const chunk = bitmapData.slice(i, i + chunkSize);
+          commands.push(chunk);
+        }
+        
+        resolve(commands);
+        
+      } catch (error) {
+        reject(error);
       }
-      
-      // Comando para imagen compacta (GS v 0)
-      const xL = bytesPerLine & 0xFF;
-      const xH = (bytesPerLine >> 8) & 0xFF;
-      const yL = canvas.height & 0xFF;
-      const yH = (canvas.height >> 8) & 0xFF;
-      
-      // Header del comando de imagen
-      commands.push(new Uint8Array([0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH]));
-      
-      // Datos de imagen en chunks pequeños para Bluetooth
-      const chunkSize = 100;
-      for (let i = 0; i < bitmapData.length; i += chunkSize) {
-        const chunk = bitmapData.slice(i, i + chunkSize);
-        commands.push(chunk);
-      }
-      
-      resolve(commands);
+    };
+    
+    img.onerror = () => {
+      reject(new Error('Error al cargar imagen QR'));
     };
     
     img.src = base64;
   });
 };
 
-// Función de envío optimizada para pegatinas
-const sendChunked = async (command: Uint8Array): Promise<void> => {
-  const chunkSize = 100; // Chunks pequeños para estabilidad Bluetooth
+// Función de envío optimizada con mejor manejo de errores
+const sendOptimizedChunked = async (command: Uint8Array): Promise<void> => {
+  if (!bluetoothPrinter?.characteristic) {
+    throw new Error('Impresora Bluetooth no conectada');
+  }
   
-  if (command.length <= chunkSize) {
-    // Comando pequeño, enviar directamente
-    const buffer = new ArrayBuffer(command.length);
-    const view = new Uint8Array(buffer);
-    view.set(command);
-    
-    await bluetoothPrinter!.characteristic.writeValue(buffer);
-    await new Promise(resolve => setTimeout(resolve, 15)); // Pausa para procesamiento
-  } else {
-    // Datos grandes, dividir en chunks
-    for (let i = 0; i < command.length; i += chunkSize) {
-      const chunk = command.slice(i, i + chunkSize);
-      const buffer = new ArrayBuffer(chunk.length);
+  const maxChunkSize = 128; // Tamaño óptimo para Bluetooth
+  const delay = 20; // Pausa entre chunks en ms
+  
+  try {
+    if (command.length <= maxChunkSize) {
+      // Comando pequeño - envío directo
+      const buffer = new ArrayBuffer(command.length);
       const view = new Uint8Array(buffer);
-      view.set(chunk);
-      
-      await bluetoothPrinter!.characteristic.writeValue(buffer);
-      await new Promise(resolve => setTimeout(resolve, 25)); // Pausa entre chunks
+      view.set(command);
+      await bluetoothPrinter.characteristic.writeValue(buffer);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    } else {
+      // Comando grande - dividir en chunks
+      for (let offset = 0; offset < command.length; offset += maxChunkSize) {
+        const chunkEnd = Math.min(offset + maxChunkSize, command.length);
+        const chunk = command.slice(offset, chunkEnd);
+        
+        const buffer = new ArrayBuffer(chunk.length);
+        const view = new Uint8Array(buffer);
+        view.set(chunk);
+        await bluetoothPrinter.characteristic.writeValue(buffer);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
+  } catch (error) {
+    console.error('Error enviando datos a impresora:', error);
+    throw new Error('Fallo en comunicación Bluetooth');
   }
 };
 
-// Función opcional: Imprimir múltiples pegatinas con separación
-const printMultipleStickers = async (count: number = 1): Promise<void> => {
-  for (let i = 0; i < count; i++) {
+// Función para imprimir múltiples pegatinas consecutivas
+const printMultipleStickers = async (quantity: number = 1): Promise<void> => {
+  if (quantity < 1 || quantity > 10) {
+    throw new Error('Cantidad debe estar entre 1 y 10');
+  }
+  
+  
+  for (let i = 0; i < quantity; i++) {
     await printQR();
     
-    if (i < count - 1) {
-      // Pausa entre pegatinas para permitir reposicionamiento manual
-      await new Promise(resolve => setTimeout(resolve, 2000));
+    // Pausa entre pegatinas para evitar atascos
+    if (i < quantity - 1) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
+  }
+  
+  setStatus({ type: 'success', message: `${quantity} pegatina(s) impresas exitosamente` });
+};
+
+// Función de prueba para verificar conexión
+const testPrinterConnection = async (): Promise<void> => {
+  if (!bluetoothPrinter?.characteristic) {
+    throw new Error('Impresora no conectada');
+  }
+  
+  try {
+    // Enviar comando de prueba simple
+    const testCommand = new Uint8Array([0x1B, 0x40]); // ESC @ - Reset
+    await bluetoothPrinter.characteristic.writeValue(testCommand.buffer);
+    
+    // Imprimir línea de prueba
+    const testText = new TextEncoder().encode('TEST OK\n\n\n');
+    await bluetoothPrinter.characteristic.writeValue(testText.buffer);
+    
+    setStatus({ type: 'success', message: 'Prueba de impresora exitosa' });
+  } catch (error) {
+    throw new Error('Fallo en prueba de impresora');
   }
 };
 // Ya no necesitamos esta función, está integrada en printImageBase64
