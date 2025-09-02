@@ -456,7 +456,7 @@ const AssetCreatorFAB: React.FC = () => {
 
 const printQR = async (): Promise<void> => {
   if (!qrData) return;
-  
+
   if (!bluetoothPrinter) {
     await connectBluetooth();
     if (!bluetoothPrinter) return;
@@ -467,12 +467,10 @@ const printQR = async (): Promise<void> => {
 
     // Convertir QR URL a base64 si no lo es ya
     let base64Image = qrData.qr_url;
-    
+
     if (!qrData.qr_url.startsWith('data:')) {
       const response = await fetch(qrData.qr_url, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+        headers: { 'Authorization': `Bearer ${token}` },
       });
       const blob = await response.blob();
       base64Image = await new Promise<string>((resolve) => {
@@ -482,51 +480,40 @@ const printQR = async (): Promise<void> => {
       });
     }
 
-    // Preparar comandos para pegatina 5cm x 2.5cm
     const commands: Uint8Array[] = [];
-    
-    // Initialize printer
-    commands.push(new Uint8Array([0x1B, 0x40])); // ESC @
-    
-    // Configurar para pegatina pequeña - más compacto
-    // Left align para texto
-    commands.push(new Uint8Array([0x1B, 0x61, 0x00])); // ESC a 0 (left align)
-    
-    // Fuente pequeña y condensada para maximizar espacio
-    commands.push(new Uint8Array([0x1B, 0x21, 0x01])); // Fuente compacta
-    
-    // Línea 1: Escuela (máximo 20 caracteres para 5cm)
-    const schoolText = qrData.school.length > 20 ? qrData.school.substring(0, 20) : qrData.school;
-    const schoolBytes = new TextEncoder().encode(`${schoolText}\n`);
-    commands.push(schoolBytes);
-    
-    // Línea 2: Aula (más compacto)
-    const classroomText = qrData.classroom.length > 25 ? qrData.classroom.substring(0, 25) : qrData.classroom;
-    const classroomBytes = new TextEncoder().encode(`${classroomText}\n`);
-    commands.push(classroomBytes);
 
-    // QR Code compacto para pegatina pequeña
-    const imageCommands = await printCompactQRSticker(base64Image);
-    commands.push(...imageCommands);
-    
-    // Línea después del QR: Nombre del activo (centrado)
-    commands.push(new Uint8Array([0x1B, 0x61, 0x01])); // Center align
-    commands.push(new Uint8Array([0x1B, 0x21, 0x00])); // Fuente normal
-    
-    const assetName = qrData.name.length > 22 ? qrData.name.substring(0, 22) : qrData.name;
-    const nameBytes = new TextEncoder().encode(`${assetName}\n`);
-    commands.push(nameBytes);
-    
-    // ID centrado y compacto
-    commands.push(new Uint8Array([0x1B, 0x21, 0x01])); // Fuente pequeña
-    const idBytes = new TextEncoder().encode(`ID: ${qrData.asset_id}\n`);
-    commands.push(idBytes);
-    
-    // Alimentación mínima para pegatina de 2.5cm de alto
-    commands.push(new Uint8Array([0x0A, 0x0A])); // Solo 2 líneas adicionales
-    
-    // Corte para pegatina
-    commands.push(new Uint8Array([0x1D, 0x56, 0x42, 0x00])); // GS V B (partial cut)
+    // Reset
+    commands.push(new Uint8Array([0x1B, 0x40])); 
+
+    // Layout horizontal: QR a la izquierda (120px), texto a la derecha
+    const qrCommands = await printCompactQRSticker(base64Image, 120);
+    commands.push(...qrCommands);
+
+    // Mover un poco a la derecha para texto (ESC $ nL nH → set absolute position)
+    const marginLeft = 130; // espacio desde borde para que texto quede al costado
+    commands.push(new Uint8Array([0x1B, 0x24, marginLeft & 0xFF, (marginLeft >> 8) & 0xFF]));
+
+    // Texto alineado a la izquierda dentro de la zona derecha
+    commands.push(new Uint8Array([0x1B, 0x61, 0x00])); 
+    commands.push(new Uint8Array([0x1B, 0x21, 0x01])); 
+
+    // Escuela
+    const school = qrData.school.slice(0, 20);
+    commands.push(new TextEncoder().encode(`${school}\n`));
+
+    // Aula
+    const classroom = qrData.classroom.slice(0, 20);
+    commands.push(new TextEncoder().encode(`${classroom}\n`));
+
+    // Nombre del activo
+    const assetName = qrData.name.slice(0, 20);
+    commands.push(new TextEncoder().encode(`${assetName}\n`));
+
+    // Salto de línea final
+    commands.push(new Uint8Array([0x0A]));
+
+    // Corte
+    commands.push(new Uint8Array([0x1D, 0x56, 0x42, 0x00]));
 
     // Enviar comandos
     for (const command of commands) {
@@ -542,105 +529,69 @@ const printQR = async (): Promise<void> => {
   }
 };
 
-// Función específica para QR en pegatinas pequeñas (5x2.5cm)
-const printCompactQRSticker = async (base64: string): Promise<Uint8Array[]> => {
+// Generador QR compacto (con tamaño ajustable)
+const printCompactQRSticker = async (base64: string, size: number = 120): Promise<Uint8Array[]> => {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      
-      // QR más pequeño para pegatina de 5cm - máximo 150 puntos
-      const maxQRSize = 150; // Tamaño compacto para pegatina
-      const qrSize = maxQRSize;
-      
-      // Asegurar que sea múltiplo de 8
-      canvas.width = Math.ceil(qrSize / 8) * 8;
+
+      canvas.width = Math.ceil(size / 8) * 8;
       canvas.height = canvas.width;
-      
-      if (!ctx) {
-        resolve([]);
-        return;
-      }
-      
-      // Fondo blanco y dibujar imagen
+
+      if (!ctx) return resolve([]);
+
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      
+
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const commands: Uint8Array[] = [];
-      
-      // Convertir a bitmap
       const bytesPerLine = Math.ceil(canvas.width / 8);
       const bitmapData = new Uint8Array(bytesPerLine * canvas.height);
-      
+
       for (let y = 0; y < canvas.height; y++) {
         for (let x = 0; x < canvas.width; x++) {
-          const pixelIndex = (y * canvas.width + x) * 4;
-          const r = imageData.data[pixelIndex];
-          const g = imageData.data[pixelIndex + 1];
-          const b = imageData.data[pixelIndex + 2];
-          
-          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+          const i = (y * canvas.width + x) * 4;
+          const gray = 0.299 * imageData.data[i] + 0.587 * imageData.data[i + 1] + 0.114 * imageData.data[i + 2];
           if (gray < 128) {
-            const byteIndex = y * bytesPerLine + Math.floor(x / 8);
-            const bitIndex = 7 - (x % 8);
-            bitmapData[byteIndex] |= (1 << bitIndex);
+            bitmapData[y * bytesPerLine + (x >> 3)] |= (1 << (7 - (x % 8)));
           }
         }
       }
-      
-      // Para pegatinas pequeñas, usar bloques más pequeños (12 píxeles)
-      const blockHeight = 12; // Bloques más pequeños para mejor compatibilidad
-      
+
+      const blockHeight = 12;
       for (let y = 0; y < canvas.height; y += blockHeight) {
-        const currentBlockHeight = Math.min(blockHeight, canvas.height - y);
-        const slice = bitmapData.slice(y * bytesPerLine, (y + currentBlockHeight) * bytesPerLine);
-        
-        // GS v 0 para cada bloque
+        const h = Math.min(blockHeight, canvas.height - y);
+        const slice = bitmapData.slice(y * bytesPerLine, (y + h) * bytesPerLine);
+
         const xL = bytesPerLine & 0xFF;
         const xH = (bytesPerLine >> 8) & 0xFF;
-        const yL = currentBlockHeight & 0xFF;
-        const yH = (currentBlockHeight >> 8) & 0xFF;
-        
+        const yL = h & 0xFF;
+        const yH = (h >> 8) & 0xFF;
+
         commands.push(new Uint8Array([0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH]));
-        
-        // Datos en chunks pequeños para Bluetooth estable
-        const chunkSize = 150; // Chunks más pequeños para pegatinas
-        for (let i = 0; i < slice.length; i += chunkSize) {
-          const chunk = slice.slice(i, i + chunkSize);
-          commands.push(chunk);
+        for (let i = 0; i < slice.length; i += 150) {
+          commands.push(slice.slice(i, i + 150));
         }
       }
-      
+
       resolve(commands);
     };
-    
     img.src = base64;
   });
 };
 
-// Función de envío optimizada (igual que tu código exitoso)
 const sendChunked = async (command: Uint8Array): Promise<void> => {
-  // Para comandos de cabecera (GS v 0) enviar directamente
-  if (command.length <= 8) {
-    const buffer = new ArrayBuffer(command.length);
-    const view = new Uint8Array(buffer);
-    view.set(command);
-    
-    await bluetoothPrinter!.characteristic.writeValue(buffer);
-    await new Promise(resolve => setTimeout(resolve, 10));
-  } else {
-    // Para datos de imagen, ya vienen pre-chunkeados
-    const buffer = new ArrayBuffer(command.length);
-    const view = new Uint8Array(buffer);
-    view.set(command);
-    
-    await bluetoothPrinter!.characteristic.writeValue(buffer);
-    await new Promise(resolve => setTimeout(resolve, 30));
-  }
+  const buffer = new ArrayBuffer(command.length);
+  const view = new Uint8Array(buffer);
+  view.set(command);
+
+  await bluetoothPrinter!.characteristic.writeValue(buffer);
+  await new Promise(resolve => setTimeout(resolve, command.length <= 8 ? 10 : 30));
 };
+
 
 // Función para imprimir múltiples pegatinas
 const printMultipleStickers = async (quantity: number = 1): Promise<void> => {
