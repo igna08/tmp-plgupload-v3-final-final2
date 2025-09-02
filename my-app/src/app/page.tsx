@@ -369,15 +369,18 @@ const ModernDashboard: React.FC = () => {
           <div className="bg-white shadow rounded-lg">
             <div className="px-6 py-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium text-gray-900">Activos Recientes</h3>
-                <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">
-                  Ver todos
-                </button>
+              <h3 className="text-lg font-medium text-gray-900">Activos Recientes</h3>
+              <a
+                href="/assets"
+                className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+              >
+                Ver todos
+              </a>
               </div>
             </div>
             <div className="divide-y divide-gray-200">
               {dashboardData.assets.slice(0, 5).map((asset) => (
-                <div key={asset.id} className="px-6 py-4 hover:bg-gray-50">
+              <div key={asset.id} className="px-6 py-4 hover:bg-gray-50">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <h4 className="text-sm font-medium text-gray-900">{asset.template.name}</h4>
