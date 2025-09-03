@@ -454,7 +454,7 @@ const AssetCreatorFAB: React.FC = () => {
     }
   };
 
- const printQR = async (): Promise<void> => {
+const printQR = async (): Promise<void> => {
   if (!qrData) return;
 
   if (!bluetoothPrinter) {
@@ -465,11 +465,12 @@ const AssetCreatorFAB: React.FC = () => {
   try {
     setIsLoading(true);
 
-    // --- Obtener QR en base64 ---
+    // Convertir QR URL a base64 si no lo es ya
     let base64Image = qrData.qr_url;
-    if (!qrData.qr_url.startsWith("data:")) {
+
+    if (!qrData.qr_url.startsWith('data:')) {
       const response = await fetch(qrData.qr_url, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { 'Authorization': `Bearer ${token}` },
       });
       const blob = await response.blob();
       base64Image = await new Promise<string>((resolve) => {
@@ -481,48 +482,52 @@ const AssetCreatorFAB: React.FC = () => {
 
     const commands: Uint8Array[] = [];
 
-    // Reset impresora
-    commands.push(new Uint8Array([0x1B, 0x40]));
+    // Reset
+    commands.push(new Uint8Array([0x1B, 0x40])); 
 
-    // --- Imprimir QR ---
-    const qrCommands = await printCompactQRSticker(base64Image, 200);
+    // Layout horizontal: QR a la izquierda (120px), texto a la derecha
+    const qrCommands = await printCompactQRSticker(base64Image, 120);
     commands.push(...qrCommands);
 
-    // --- Rotar texto 90° ---
-    commands.push(new Uint8Array([0x1B, 0x54, 0x01])); // ESC T 1 → rotación 90°
-    commands.push(new Uint8Array([0x1B, 0x61, 0x00])); // Alinear izquierda
+    // Mover un poco a la derecha para texto (ESC $ nL nH → set absolute position)
+    const marginLeft = 130; // espacio desde borde para que texto quede al costado
+    commands.push(new Uint8Array([0x1B, 0x24, marginLeft & 0xFF, (marginLeft >> 8) & 0xFF]));
 
-    // Texto en vertical (al costado del QR)
+    // Texto alineado a la izquierda dentro de la zona derecha
+    commands.push(new Uint8Array([0x1B, 0x61, 0x00])); 
+    commands.push(new Uint8Array([0x1B, 0x21, 0x01])); 
+
+    // Escuela
     const school = qrData.school.slice(0, 20);
     commands.push(new TextEncoder().encode(`${school}\n`));
 
+    // Aula
     const classroom = qrData.classroom.slice(0, 20);
     commands.push(new TextEncoder().encode(`${classroom}\n`));
 
+    // Nombre del activo
     const assetName = qrData.name.slice(0, 20);
     commands.push(new TextEncoder().encode(`${assetName}\n`));
 
-    // --- Volver a rotación normal ---
-    commands.push(new Uint8Array([0x1B, 0x54, 0x00])); // ESC T 0 → normal
-
-    // Salto de línea y corte de papel
+    // Salto de línea final
     commands.push(new Uint8Array([0x0A]));
+
+    // Corte
     commands.push(new Uint8Array([0x1D, 0x56, 0x42, 0x00]));
 
-    // --- Enviar a la impresora ---
+    // Enviar comandos
     for (const command of commands) {
       await sendChunked(command);
     }
 
-    setStatus({ type: "success", message: "Pegatina QR impresa exitosamente" });
+    setStatus({ type: 'success', message: 'Pegatina QR impresa exitosamente' });
   } catch (error) {
-    setStatus({ type: "error", message: "Error al imprimir pegatina QR" });
-    console.error("Print error:", error);
+    setStatus({ type: 'error', message: 'Error al imprimir pegatina QR' });
+    console.error('Print error:', error);
   } finally {
     setIsLoading(false);
   }
 };
-
 
 // Generador QR compacto (con tamaño ajustable)
 const printCompactQRSticker = async (base64: string, size: number = 120): Promise<Uint8Array[]> => {
@@ -586,6 +591,8 @@ const sendChunked = async (command: Uint8Array): Promise<void> => {
   await bluetoothPrinter!.characteristic.writeValue(buffer);
   await new Promise(resolve => setTimeout(resolve, command.length <= 8 ? 10 : 30));
 };
+
+
 
 
 // Función para imprimir múltiples pegatinas
