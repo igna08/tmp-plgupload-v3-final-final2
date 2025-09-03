@@ -122,30 +122,6 @@ interface DashboardData {
 
 const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
 
-export const metadata = {
-  title: "ISSA - Sistema de Gestión de QR Escolar",
-  description: "Plataforma de gestión de QR para instituciones educativas.",
-  openGraph: {
-    title: "ISSA - Sistema de Gestión de QR Escolar",
-    description: "Plataforma de gestión de QR para instituciones educativas.",
-    url: "https://issa-qr.vercel.app",
-    siteName: "ISSA QR",
-    images: [
-      {
-        url: "https://issa-qr.vercel.app/foto.png",
-        width: 1200,
-        height: 630,
-      },
-    ],
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "ISSA - Sistema de Gestión de QR Escolar",
-    description: "Plataforma de gestión de QR para instituciones educativas.",
-    images: ["https://issa-qr.vercel.app/foto.png"],
-  },
-};
 
 
 
