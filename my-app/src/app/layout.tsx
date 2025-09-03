@@ -36,7 +36,7 @@ export const metadata: Metadata = {
     siteName: "ISSA QR",
     images: [
       {
-        url: "/foto.png",
+        url: "https://issa-qr.vercel.app/foto.png",
         width: 1200,
         height: 630,
       },
