@@ -457,6 +457,9 @@ const AssetCreatorFAB: React.FC = () => {
 // =====================
 // Función principal
 // =====================
+// =====================
+// Función principal
+// =====================
 const printQR = async (): Promise<void> => {
   if (!qrData) return;
 
@@ -486,13 +489,17 @@ const printQR = async (): Promise<void> => {
     // Reset impresora
     commands.push(new Uint8Array([0x1B, 0x40]));
 
-    // Altura de etiqueta fija: 200px
+    // Altura de etiqueta fija: 200px (25 mm)
     const qrCommands = await generateFullSticker(base64Image, 200); 
     commands.push(...qrCommands);
 
-    // Avanzar el gap (≈12 px)
-    commands.push(new Uint8Array([0x1B, 0x4A, 0x0C])); 
-    // ESC J n → avanzar n dots (0x0C = 12 dots)
+    // Avanzar altura etiqueta + gap
+    const labelHeightDots = 200; // 25 mm
+    const gapDots = 12;          // 1–1.5 mm
+    const advance = labelHeightDots + gapDots;
+
+    // ESC J n → avanzar n dots (0–255)
+    commands.push(new Uint8Array([0x1B, 0x4A, advance & 0xFF]));
 
     // Corte (si tu impresora tiene cutter)
     commands.push(new Uint8Array([0x1D, 0x56, 0x01])); 
@@ -525,7 +532,7 @@ const generateFullSticker = async (
       const ctx = canvas.getContext('2d');
 
       const printerWidth = 576; // ancho impresora (80mm)
-      const qrSize = 160; // QR más chico que etiqueta
+      const qrSize = 160;       // QR más chico que etiqueta
 
       canvas.width = printerWidth;
       canvas.height = stickerHeight;
@@ -585,6 +592,8 @@ const generateFullSticker = async (
     img.src = base64;
   });
 };
+
+
 
 const sendChunked = async (command: Uint8Array): Promise<void> => {
   const buffer = new ArrayBuffer(command.length);
