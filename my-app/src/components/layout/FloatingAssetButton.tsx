@@ -473,7 +473,7 @@ const printQR = async (): Promise<void> => {
 
     if (!qrData.qr_url.startsWith('data:')) {
       const response = await fetch(qrData.qr_url, {
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
       const blob = await response.blob();
       base64Image = await new Promise<string>((resolve) => {
@@ -491,14 +491,15 @@ const printQR = async (): Promise<void> => {
     // Densidad normal
     commands.push(new Uint8Array([0x1D, 0x7A, 0x00]));
 
-    // Generar QR centrado en etiqueta 5x2.5 cm
-    const qrCommands = await printCenteredQRSticker(base64Image, 170); 
+    // Generar QR centrado en etiqueta (5cm x 2.5cm ≈ 380x200 px)
+    const qrCommands = await printCenteredQRSticker(base64Image, 160);
     commands.push(...qrCommands);
 
-    // Avance exacto de 2.5 cm (190 px aprox)
-    commands.push(new Uint8Array([0x1B, 0x4A, 190]));
+    // Salto de línea para separar etiquetas (en vez de avance en px)
+    commands.push(new Uint8Array([0x0A])); 
+    commands.push(new Uint8Array([0x0A])); // extra aire opcional
 
-    // Corte parcial (si lo soporta)
+    // Corte parcial (si la impresora lo soporta)
     commands.push(new Uint8Array([0x1D, 0x56, 0x01]));
 
     // Enviar comandos
@@ -520,7 +521,7 @@ const printQR = async (): Promise<void> => {
 // =====================
 const printCenteredQRSticker = async (
   base64: string,
-  size: number = 160 // más chico que la altura
+  size: number = 160 // QR más chico para dejar márgenes
 ): Promise<Uint8Array[]> => {
   return new Promise((resolve) => {
     const img = new Image();
@@ -528,8 +529,8 @@ const printCenteredQRSticker = async (
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
 
-      const printerWidth = 576; 
-      const stickerHeight = 190; // altura etiqueta 2.5 cm
+      const printerWidth = 576; // ancho de la impresora (80mm ~ 8cm)
+      const stickerHeight = 200; // altura fija ≈ 2.5cm
       const actualQRSize = size;
 
       canvas.width = printerWidth;
@@ -541,13 +542,13 @@ const printCenteredQRSticker = async (
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Centrado con márgenes arriba/abajo
+      // Centrado del QR
       const xOffset = (canvas.width - actualQRSize) / 2;
-      const yOffset = (stickerHeight - actualQRSize) / 2; // centrado vertical
+      const yOffset = (stickerHeight - actualQRSize) / 2;
 
       ctx.drawImage(img, xOffset, yOffset, actualQRSize, actualQRSize);
 
-      // Resto del procesamiento igual...
+      // Convertir a bitmap monocromático
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const commands: Uint8Array[] = [];
       const bytesPerLine = Math.ceil(canvas.width / 8);
@@ -589,7 +590,7 @@ const printCenteredQRSticker = async (
     };
     img.src = base64;
   });
-}
+};
 
 // =====================
 // Envío optimizado
@@ -640,9 +641,6 @@ const printMultipleStickers = async (quantity: number = 1): Promise<void> => {
   }
 };
 
-
-
-// Función para imprimir múltiples pegatinas
 
 
 // Función de prueba simplificada
