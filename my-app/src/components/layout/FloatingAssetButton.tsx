@@ -482,42 +482,31 @@ const printQR = async (): Promise<void> => {
 
     const commands: Uint8Array[] = [];
 
-    // Reset
+    // Reset completo de la impresora
     commands.push(new Uint8Array([0x1B, 0x40])); 
 
-    // Layout horizontal: QR a la izquierda (120px), texto a la derecha
-    const qrCommands = await printCompactQRSticker(base64Image, 120);
+    // Configurar para pegatina pequeña (5cm x 2.5cm)
+    // Ajustar densidad de impresión para mejor calidad en pegatinas pequeñas
+    commands.push(new Uint8Array([0x1D, 0x7A, 0x00])); // Densidad normal
+
+    // Pequeño margen superior para centrar verticalmente (aprox 3mm)
+    commands.push(new Uint8Array([0x1B, 0x64, 0x02])); // 2 líneas de espacio
+
+    // QR centrado y maximizado para 5cm de ancho
+    // Tamaño óptimo: 180px para aprovechar casi todo el ancho disponible
+    const qrCommands = await printCenteredQRSticker(base64Image, 180);
     commands.push(...qrCommands);
 
-    // Mover un poco a la derecha para texto (ESC $ nL nH → set absolute position)
-    const marginLeft = 130; // espacio desde borde para que texto quede al costado
-    commands.push(new Uint8Array([0x1B, 0x24, marginLeft & 0xFF, (marginLeft >> 8) & 0xFF]));
+    // Pequeño espacio inferior
+    commands.push(new Uint8Array([0x0A])); 
 
-    // Texto alineado a la izquierda dentro de la zona derecha
-    commands.push(new Uint8Array([0x1B, 0x61, 0x00])); 
-    commands.push(new Uint8Array([0x1B, 0x21, 0x01])); 
+    // Corte parcial para pegatinas sin detector
+    // Usar corte suave para no dañar el papel de las pegatinas
+    commands.push(new Uint8Array([0x1D, 0x56, 0x01])); // Corte parcial
 
-    // Escuela
-    const school = qrData.school.slice(0, 20);
-    commands.push(new TextEncoder().encode(`${school}\n`));
-
-    // Aula
-    const classroom = qrData.classroom.slice(0, 20);
-    commands.push(new TextEncoder().encode(`${classroom}\n`));
-
-    // Nombre del activo
-    const assetName = qrData.name.slice(0, 20);
-    commands.push(new TextEncoder().encode(`${assetName}\n`));
-
-    // Salto de línea final
-    commands.push(new Uint8Array([0x0A]));
-
-    // Corte
-    commands.push(new Uint8Array([0x1D, 0x56, 0x42, 0x00]));
-
-    // Enviar comandos
+    // Enviar comandos con delays optimizados para pegatinas
     for (const command of commands) {
-      await sendChunked(command);
+      await sendChunkedForStickers(command);
     }
 
     setStatus({ type: 'success', message: 'Pegatina QR impresa exitosamente' });
@@ -529,28 +518,41 @@ const printQR = async (): Promise<void> => {
   }
 };
 
-// Generador QR compacto (con tamaño ajustable)
-const printCompactQRSticker = async (base64: string, size: number = 120): Promise<Uint8Array[]> => {
+// Generador QR centrado para pegatinas pequeñas
+const printCenteredQRSticker = async (base64: string, size: number = 180): Promise<Uint8Array[]> => {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
 
-      canvas.width = Math.ceil(size / 8) * 8;
-      canvas.height = canvas.width;
+      // Ajustar canvas al tamaño de impresión (576px ≈ 8cm para impresoras térmicas)
+      const printerWidth = 576; // ancho típico impresora térmica 80mm
+      const actualQRSize = Math.min(size, printerWidth - 80); // margen de 40px cada lado
+      
+      canvas.width = printerWidth;
+      canvas.height = actualQRSize + 20; // pequeño margen vertical
 
       if (!ctx) return resolve([]);
 
+      // Fondo blanco
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
+      // Centrar QR horizontalmente
+      const xOffset = (canvas.width - actualQRSize) / 2;
+      const yOffset = 10; // pequeño margen superior
+
+      // Dibujar QR centrado y ampliado
+      ctx.drawImage(img, xOffset, yOffset, actualQRSize, actualQRSize);
+
+      // Convertir a datos de bitmap para impresora térmica
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const commands: Uint8Array[] = [];
       const bytesPerLine = Math.ceil(canvas.width / 8);
       const bitmapData = new Uint8Array(bytesPerLine * canvas.height);
 
+      // Conversión a bitmap monocromático
       for (let y = 0; y < canvas.height; y++) {
         for (let x = 0; x < canvas.width; x++) {
           const i = (y * canvas.width + x) * 4;
@@ -561,7 +563,8 @@ const printCompactQRSticker = async (base64: string, size: number = 120): Promis
         }
       }
 
-      const blockHeight = 12;
+      // Enviar bitmap en bloques pequeños para mejor control
+      const blockHeight = 24; // bloques más grandes para pegatinas
       for (let y = 0; y < canvas.height; y += blockHeight) {
         const h = Math.min(blockHeight, canvas.height - y);
         const slice = bitmapData.slice(y * bytesPerLine, (y + h) * bytesPerLine);
@@ -571,9 +574,12 @@ const printCompactQRSticker = async (base64: string, size: number = 120): Promis
         const yL = h & 0xFF;
         const yH = (h >> 8) & 0xFF;
 
+        // Comando para imprimir bitmap
         commands.push(new Uint8Array([0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH]));
-        for (let i = 0; i < slice.length; i += 150) {
-          commands.push(slice.slice(i, i + 150));
+        
+        // Dividir datos en chunks más pequeños para estabilidad
+        for (let i = 0; i < slice.length; i += 100) {
+          commands.push(slice.slice(i, i + 100));
         }
       }
 
@@ -583,36 +589,84 @@ const printCompactQRSticker = async (base64: string, size: number = 120): Promis
   });
 };
 
-const sendChunked = async (command: Uint8Array): Promise<void> => {
+// Función de envío optimizada para pegatinas
+const sendChunkedForStickers = async (command: Uint8Array): Promise<void> => {
   const buffer = new ArrayBuffer(command.length);
   const view = new Uint8Array(buffer);
   view.set(command);
 
   await bluetoothPrinter!.characteristic.writeValue(buffer);
-  await new Promise(resolve => setTimeout(resolve, command.length <= 8 ? 10 : 30));
+  
+  // Delays ajustados para pegatinas - más tiempo para procesar
+  if (command.length <= 8) {
+    await new Promise(resolve => setTimeout(resolve, 15)); // comandos de control
+  } else if (command.length <= 100) {
+    await new Promise(resolve => setTimeout(resolve, 40)); // chunks de imagen
+  } else {
+    await new Promise(resolve => setTimeout(resolve, 60)); // bloques grandes
+  }
 };
 
+// Función para imprimir múltiples pegatinas con calibración automática
+const printMultipleStickers = async (quantity: number = 1): Promise<void> => {
+  if (quantity < 1 || quantity > 10) {
+    throw new Error('Cantidad debe estar entre 1 y 10 para pegatinas');
+  }
+
+
+  try {
+    for (let i = 0; i < quantity; i++) {
+      
+      await printQR();
+
+      // Pausa entre pegatinas para evitar atascos
+      // Tiempo extra para que la impresora procese completamente cada pegatina
+      if (i < quantity - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1200));
+      }
+    }
+
+    setStatus({ type: 'success', message: `${quantity} pegatina(s) impresas exitosamente` });
+  } catch (error) {
+    setStatus({ type: 'error', message: `Error al imprimir pegatinas: ${error}` });
+    throw error;
+  }
+};
+
+// Función de calibración manual para impresoras sin detector
+const calibratePrinter = async (): Promise<void> => {
+  if (!bluetoothPrinter) {
+    await connectBluetooth();
+    if (!bluetoothPrinter) return;
+  }
+
+  try {
+    const commands: Uint8Array[] = [];
+    
+    // Reset completo
+    commands.push(new Uint8Array([0x1B, 0x40]));
+    
+    // Configurar para papel de pegatinas
+    commands.push(new Uint8Array([0x1B, 0x63, 0x33, 0x08])); // Configurar sensor
+    
+    // Avanzar papel para encontrar inicio de pegatina
+    commands.push(new Uint8Array([0x1B, 0x64, 0x05])); // 5 líneas adelante
+    
+    // Enviar comandos
+    for (const command of commands) {
+      await sendChunkedForStickers(command);
+    }
+    
+    setStatus({ type: 'success', message: 'Impresora calibrada para pegatinas' });
+  } catch (error) {
+    setStatus({ type: 'error', message: 'Error en calibración' });
+    console.error('Calibration error:', error);
+  }
+};
 
 
 
 // Función para imprimir múltiples pegatinas
-const printMultipleStickers = async (quantity: number = 1): Promise<void> => {
-  if (quantity < 1 || quantity > 5) {
-    throw new Error('Cantidad debe estar entre 1 y 5 para pegatinas');
-  }
-  
-  
-  for (let i = 0; i < quantity; i++) {
-    await printQR();
-    
-    // Pausa más corta entre pegatinas pequeñas
-    if (i < quantity - 1) {
-      await new Promise(resolve => setTimeout(resolve, 800));
-    }
-  }
-  
-  setStatus({ type: 'success', message: `${quantity} pegatina(s) impresas exitosamente` });
-};
 
 // Función de prueba simplificada
 const testPrinterConnection = async (): Promise<void> => {
