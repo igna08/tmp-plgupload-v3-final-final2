@@ -475,8 +475,8 @@ const SingleAssetPage: React.FC = () => {
                         onChange={(e) => setEditForm(prev => ({
                           ...prev,
                           template: prev.template
-                            ? { ...prev.template, name: e.target.value, id: prev.template.id ?? '' }
-                            : { name: e.target.value, id: asset?.template.id ?? '', description: asset?.template.description ?? '', manufacturer: asset?.template.manufacturer ?? '', model_number: asset?.template.model_number ?? '', category_id: asset?.template.category_id ?? '', category: asset?.template.category }
+                            ? { ...prev.template, name: e.target.value }
+                            : { ...asset.template, name: e.target.value }
                         }))}
                         className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         disabled
