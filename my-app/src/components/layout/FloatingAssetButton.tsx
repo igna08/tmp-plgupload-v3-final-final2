@@ -468,9 +468,7 @@ const printQR = async (): Promise<void> => {
   try {
     setIsLoading(true);
 
-    // Convertir QR URL a base64 si no lo es ya
     let base64Image = qrData.qr_url;
-
     if (!qrData.qr_url.startsWith('data:')) {
       const response = await fetch(qrData.qr_url, {
         headers: { Authorization: `Bearer ${token}` },
@@ -485,31 +483,28 @@ const printQR = async (): Promise<void> => {
 
     const commands: Uint8Array[] = [];
 
-    // Reset de impresora
+    // Reset impresora
     commands.push(new Uint8Array([0x1B, 0x40]));
 
-    // Densidad normal
-    commands.push(new Uint8Array([0x1D, 0x7A, 0x00]));
-
-    // Generar QR centrado en etiqueta (5cm x 2.5cm ≈ 380x200 px)
-    const qrCommands = await printCenteredQRSticker(base64Image, 160);
+    // Altura de etiqueta fija: 200px
+    const qrCommands = await generateFullSticker(base64Image, 200); 
     commands.push(...qrCommands);
 
-    // Salto de línea para separar etiquetas (en vez de avance en px)
-    commands.push(new Uint8Array([0x0A])); 
-    commands.push(new Uint8Array([0x0A])); // extra aire opcional
+    // Avanzar el gap (≈12 px)
+    commands.push(new Uint8Array([0x1B, 0x4A, 0x0C])); 
+    // ESC J n → avanzar n dots (0x0C = 12 dots)
 
-    // Corte parcial (si la impresora lo soporta)
-    commands.push(new Uint8Array([0x1D, 0x56, 0x01]));
+    // Corte (si tu impresora tiene cutter)
+    commands.push(new Uint8Array([0x1D, 0x56, 0x01])); 
 
-    // Enviar comandos
+    // Enviar
     for (const command of commands) {
-      await sendChunkedForStickers(command);
+      await sendChunked(command);
     }
 
-    setStatus({ type: 'success', message: 'Pegatina QR impresa exitosamente' });
+    setStatus({ type: 'success', message: 'Etiqueta QR impresa correctamente' });
   } catch (error) {
-    setStatus({ type: 'error', message: 'Error al imprimir pegatina QR' });
+    setStatus({ type: 'error', message: 'Error al imprimir etiqueta QR' });
     console.error('Print error:', error);
   } finally {
     setIsLoading(false);
@@ -517,11 +512,11 @@ const printQR = async (): Promise<void> => {
 };
 
 // =====================
-// Generador QR centrado
+// Generar bloque completo de etiqueta
 // =====================
-const printCenteredQRSticker = async (
+const generateFullSticker = async (
   base64: string,
-  size: number = 160 // QR más chico para dejar márgenes
+  stickerHeight: number = 200 // 25mm = 200px
 ): Promise<Uint8Array[]> => {
   return new Promise((resolve) => {
     const img = new Image();
@@ -529,9 +524,8 @@ const printCenteredQRSticker = async (
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
 
-      const printerWidth = 576; // ancho de la impresora (80mm ~ 8cm)
-      const stickerHeight = 200; // altura fija ≈ 2.5cm
-      const actualQRSize = size;
+      const printerWidth = 576; // ancho impresora (80mm)
+      const qrSize = 160; // QR más chico que etiqueta
 
       canvas.width = printerWidth;
       canvas.height = stickerHeight;
@@ -542,13 +536,12 @@ const printCenteredQRSticker = async (
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Centrado del QR
-      const xOffset = (canvas.width - actualQRSize) / 2;
-      const yOffset = (stickerHeight - actualQRSize) / 2;
+      // Centrar QR
+      const xOffset = (canvas.width - qrSize) / 2;
+      const yOffset = (stickerHeight - qrSize) / 2;
+      ctx.drawImage(img, xOffset, yOffset, qrSize, qrSize);
 
-      ctx.drawImage(img, xOffset, yOffset, actualQRSize, actualQRSize);
-
-      // Convertir a bitmap monocromático
+      // Convertir a bitmap monocromo
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const commands: Uint8Array[] = [];
       const bytesPerLine = Math.ceil(canvas.width / 8);
@@ -567,6 +560,7 @@ const printCenteredQRSticker = async (
         }
       }
 
+      // Enviar en bloques
       const blockHeight = 24;
       for (let y = 0; y < canvas.height; y += blockHeight) {
         const h = Math.min(blockHeight, canvas.height - y);
@@ -592,56 +586,36 @@ const printCenteredQRSticker = async (
   });
 };
 
-// =====================
-// Envío optimizado
-// =====================
-const sendChunkedForStickers = async (command: Uint8Array): Promise<void> => {
+const sendChunked = async (command: Uint8Array): Promise<void> => {
   const buffer = new ArrayBuffer(command.length);
   const view = new Uint8Array(buffer);
   view.set(command);
 
   await bluetoothPrinter!.characteristic.writeValue(buffer);
-
-  // Retrasos ajustados
-  if (command.length <= 8) {
-    await new Promise((res) => setTimeout(res, 15));
-  } else if (command.length <= 100) {
-    await new Promise((res) => setTimeout(res, 40));
-  } else {
-    await new Promise((res) => setTimeout(res, 60));
-  }
+  await new Promise(resolve => setTimeout(resolve, command.length <= 8 ? 10 : 30));
 };
 
-// =====================
-// Múltiples etiquetas
-// =====================
+
+
+
+// Función para imprimir múltiples pegatinas
 const printMultipleStickers = async (quantity: number = 1): Promise<void> => {
-  if (quantity < 1 || quantity > 10) {
-    throw new Error('Cantidad debe estar entre 1 y 10');
+  if (quantity < 1 || quantity > 5) {
+    throw new Error('Cantidad debe estar entre 1 y 5 para pegatinas');
   }
-
-  try {
-    for (let i = 0; i < quantity; i++) {
-      await printQR();
-      if (i < quantity - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1200));
-      }
+  
+  
+  for (let i = 0; i < quantity; i++) {
+    await printQR();
+    
+    // Pausa más corta entre pegatinas pequeñas
+    if (i < quantity - 1) {
+      await new Promise(resolve => setTimeout(resolve, 800));
     }
-
-    setStatus({
-      type: 'success',
-      message: `${quantity} pegatina(s) impresas exitosamente`,
-    });
-  } catch (error) {
-    setStatus({
-      type: 'error',
-      message: `Error al imprimir pegatinas: ${error}`,
-    });
-    throw error;
   }
+  
+  setStatus({ type: 'success', message: `${quantity} pegatina(s) impresas exitosamente` });
 };
-
-
 
 // Función de prueba simplificada
 const testPrinterConnection = async (): Promise<void> => {
