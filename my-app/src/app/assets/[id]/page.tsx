@@ -684,7 +684,7 @@ const SingleAssetPage: React.FC = () => {
                         href={`/classrooms/${asset.classroom_id}`}
                         className="text-blue-600 hover:text-blue-800 font-medium hover:underline"
                       >
-                        Ver aula {asset.classroom_id}
+                        Ver aula
                       </Link>
                     </div>
                   </div>
@@ -837,17 +837,7 @@ const SingleAssetPage: React.FC = () => {
                     Ver Aula
                   </Link>
                   
-                  <button
-                    onClick={() => navigator.share ? navigator.share({
-                      title: `Activo: ${asset.template.name}`,
-                      text: `${asset.template.name} - Serie: ${asset.serial_number}`,
-                      url: window.location.href
-                    }) : navigator.clipboard.writeText(window.location.href)}
-                    className="w-full bg-gray-50 text-gray-700 px-3 py-2 rounded text-sm hover:bg-gray-100 flex items-center justify-center border border-gray-200"
-                  >
-                    <Users className="h-4 w-4 mr-1" />
-                    Compartir
-                  </button>
+
                 </div>
               </div>
             </div>
