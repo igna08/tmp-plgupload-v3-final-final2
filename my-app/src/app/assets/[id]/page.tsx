@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { useParams } from 'next/navigation';
+import { useRouter } from 'next/navigation'; // Using App Router
+import { useParams } from 'next/navigation'; // For getting route parameters
 import axios from 'axios';
 import Button from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
@@ -110,26 +110,13 @@ const statusOptions = [
 
 const SingleAssetPage: React.FC = () => {
   const router = useRouter();
-  const params = useParams();
+  const params = useParams(); // For App Router
+  const id = params?.id as string; // Get the asset ID from route parameters
   const { user, isLoading: isAuthLoading } = useAuth();
-  
-  // Fix the ID extraction
-  const id = React.useMemo(() => {
-    if (!params) return null;
-    
-    // Handle different possible parameter names
-    const possibleId = params.id || params.assetId || params.slug;
-    
-    if (Array.isArray(possibleId)) {
-      return possibleId[0];
-    }
-    
-    return possibleId as string;
-  }, [params]);
   
   const [asset, setAsset] = useState<Asset | null>(null);
   const [assetEvents, setAssetEvents] = useState<AssetEvent[]>([]);
-  const [assetIncidents, setAssetIncident] = useState<AssetIncident[]>([]);
+  const [assetIncidents, setAssetIncidents] = useState<AssetIncident[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
   const [isLoadingIncidents, setIsLoadingIncidents] = useState(false);
@@ -139,24 +126,15 @@ const SingleAssetPage: React.FC = () => {
   const [isSaving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'events' | 'incidents'>('details');
 
-  // Enhanced debug logging
-  const debugLog = React.useCallback((message: string, data?: any) => {
+  // Debug logging
+  const debugLog = (message: string, data?: any) => {
     console.log(`[SingleAssetPage] ${message}`, data || '');
-  }, []);
+  };
 
-  // Fetch single asset with better error handling
+  // Fetch single asset
   const fetchAsset = useCallback(async () => {
-    if (!id) {
-      debugLog('Cannot fetch asset - no ID provided', { 
-        params, 
-        extractedId: id,
-        paramsKeys: params ? Object.keys(params) : 'no params'
-      });
-      return;
-    }
-    
-    if (!user) {
-      debugLog('Cannot fetch asset - no user', { userId: user && typeof user === 'object' && 'id' in user ? (user as any).id : undefined });
+    if (!id || !user) {
+      debugLog('Cannot fetch asset', { hasId: !!id, hasUser: !!user });
       return;
     }
     
@@ -166,21 +144,17 @@ const SingleAssetPage: React.FC = () => {
     
     try {
       const response = await axios.get(`${API_BASE_URL}/assets/${id}`);
-      debugLog('Asset fetched successfully', { assetId: response.data?.id });
+      debugLog('Asset fetched successfully', response.data);
       setAsset(response.data);
       setEditForm(response.data);
     } catch (err: any) {
       const errorMessage = err.response?.data?.detail || 'Error al cargar el activo';
-      debugLog('Fetch asset error', { 
-        error: err.message, 
-        status: err.response?.status,
-        message: errorMessage 
-      });
+      debugLog('Fetch asset error', { error: err, message: errorMessage });
       setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
-  }, [id, user, debugLog]);
+  }, [id, user]);
 
   // Fetch asset events
   const fetchAssetEvents = useCallback(async () => {
@@ -193,15 +167,14 @@ const SingleAssetPage: React.FC = () => {
     setIsLoadingEvents(true);
     try {
       const response = await axios.get(`${API_BASE_URL}/assets/${id}/events/`);
-      debugLog('Events fetched', { count: response.data?.length || 0 });
-      setAssetEvents(response.data || []);
-    } catch (err: any) {
-      debugLog('Error fetching asset events', { error: err.message });
-      setAssetEvents([]);
+      debugLog('Events fetched', response.data);
+      setAssetEvents(response.data);
+    } catch (err) {
+      debugLog('Error fetching asset events', err);
     } finally {
       setIsLoadingEvents(false);
     }
-  }, [id, debugLog]);
+  }, [id]);
 
   // Fetch asset incidents
   const fetchAssetIncidents = useCallback(async () => {
@@ -214,15 +187,14 @@ const SingleAssetPage: React.FC = () => {
     setIsLoadingIncidents(true);
     try {
       const response = await axios.get(`${API_BASE_URL}/assets/${id}/incidents/`);
-      debugLog('Incidents fetched', { count: response.data?.length || 0 });
-      setAssetIncident(response.data || []);
-    } catch (err: any) {
-      debugLog('Error fetching asset incidents', { error: err.message });
-      setAssetIncident([]);
+      debugLog('Incidents fetched', response.data);
+      setAssetIncidents(response.data);
+    } catch (err) {
+      debugLog('Error fetching asset incidents', err);
     } finally {
       setIsLoadingIncidents(false);
     }
-  }, [id, debugLog]);
+  }, [id]);
 
   // Generate or regenerate QR Code
   const handleQRCodeAction = async () => {
@@ -233,10 +205,10 @@ const SingleAssetPage: React.FC = () => {
       const response = await axios.post(`${API_BASE_URL}/assets/${asset.id}/qr-codes/`);
       setAsset(prev => prev ? { ...prev, qr_code: response.data } : null);
       alert('Código QR generado/regenerado exitosamente');
-      debugLog('QR code generated successfully', { hasQrCode: !!response.data });
+      debugLog('QR code generated successfully', response.data);
     } catch (err: any) {
       const errorMessage = err.response?.data?.detail || 'Error desconocido';
-      debugLog('QR code generation error', { error: err.message, message: errorMessage });
+      debugLog('QR code generation error', { error: err, message: errorMessage });
       alert('Error al generar código QR: ' + errorMessage);
     }
   };
@@ -269,10 +241,10 @@ const SingleAssetPage: React.FC = () => {
       });
       setAsset(response.data);
       alert('Estado actualizado exitosamente');
-      debugLog('Status updated successfully', { newStatus: response.data?.status });
+      debugLog('Status updated successfully', response.data);
     } catch (err: any) {
       const errorMessage = err.response?.data?.detail || 'Error desconocido';
-      debugLog('Status update error', { error: err.message, message: errorMessage });
+      debugLog('Status update error', { error: err, message: errorMessage });
       alert('Error al actualizar estado: ' + errorMessage);
     }
   };
@@ -281,17 +253,17 @@ const SingleAssetPage: React.FC = () => {
   const saveAssetChanges = async () => {
     if (!asset || !editForm) return;
     
-    debugLog('Saving asset changes', { assetId: asset.id, hasChanges: !!editForm });
+    debugLog('Saving asset changes', { assetId: asset.id, changes: editForm });
     setSaving(true);
     try {
       const response = await axios.put(`${API_BASE_URL}/assets/${asset.id}`, editForm);
       setAsset(response.data);
       setIsEditing(false);
       alert('Activo actualizado exitosamente');
-      debugLog('Asset updated successfully', { assetId: response.data?.id });
+      debugLog('Asset updated successfully', response.data);
     } catch (err: any) {
       const errorMessage = err.response?.data?.detail || 'Error desconocido';
-      debugLog('Asset update error', { error: err.message, message: errorMessage });
+      debugLog('Asset update error', { error: err, message: errorMessage });
       alert('Error al actualizar activo: ' + errorMessage);
     } finally {
       setSaving(false);
@@ -313,7 +285,7 @@ const SingleAssetPage: React.FC = () => {
       router.push('/admin/assets');
     } catch (err: any) {
       const errorMessage = err.response?.data?.detail || 'Error desconocido';
-      debugLog('Asset deletion error', { error: err.message, message: errorMessage });
+      debugLog('Asset deletion error', { error: err, message: errorMessage });
       alert('Error al eliminar activo: ' + errorMessage);
     }
   };
@@ -324,8 +296,7 @@ const SingleAssetPage: React.FC = () => {
       isAuthLoading,
       hasUser: !!user,
       hasId: !!id,
-      assetId: id,
-      params: params
+      assetId: id
     });
 
     if (!isAuthLoading && user && id) {
@@ -363,13 +334,9 @@ const SingleAssetPage: React.FC = () => {
     );
   }
 
-  // No ID provided - Enhanced debugging
+  // No ID provided
   if (!id) {
-    debugLog('No asset ID provided', { 
-      params, 
-      paramsKeys: params ? Object.keys(params) : 'no params',
-      url: typeof window !== 'undefined' ? window.location.href : 'server-side'
-    });
+    debugLog('No asset ID provided');
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="bg-white shadow">
@@ -379,13 +346,7 @@ const SingleAssetPage: React.FC = () => {
                 <Link href="/admin/assets" className="mr-4">
                   <ArrowLeft className="h-6 w-6 text-gray-600 hover:text-gray-800" />
                 </Link>
-                <div>
-                  <h1 className="text-3xl font-bold text-gray-900">ID de activo requerido</h1>
-                  <div className="mt-2 text-sm text-gray-500">
-                    <p>Parámetros recibidos: {JSON.stringify(params)}</p>
-                    <p>ID extraído: {id || 'null'}</p>
-                  </div>
-                </div>
+                <h1 className="text-3xl font-bold text-gray-900">ID de activo requerido</h1>
               </div>
             </div>
           </div>
@@ -586,7 +547,17 @@ const SingleAssetPage: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
-                    <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md">{asset.template.name}</p>
+                    {isEditing ? (
+                        <input
+                            type="text"
+                            value={editForm.template?.name || ''}
+                            // Only allow display/edit if template exists, but don't mutate template object
+                            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            disabled
+                        />
+                    ) : (
+                        <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md">{asset.template.name}</p>
+                    )}
                   </div>
                   
                   <div>
