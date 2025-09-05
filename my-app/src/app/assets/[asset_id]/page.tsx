@@ -156,7 +156,7 @@ const SingleAssetPage: React.FC = () => {
     }
     
     if (!user) {
-      debugLog('Cannot fetch asset - no user');
+      debugLog('Cannot fetch asset - no user', { userId: user && typeof user === 'object' && 'id' in user ? (user as any).id : undefined });
       return;
     }
     
