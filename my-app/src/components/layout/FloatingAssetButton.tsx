@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Plus, X, Save, Printer, Download, Check, AlertCircle, Loader } from 'lucide-react';
+import { Camera, Plus, X, Save, Printer, Download, Check, AlertCircle, Loader, Usb } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
@@ -69,15 +69,15 @@ interface StatusState {
   message: string;
 }
 
-interface BluetoothPrinter {
-  device: BluetoothDevice;
-  characteristic: BluetoothRemoteGATTCharacteristic;
+interface USBPrinter {
+  device: any; // USBDevice type not available in standard TypeScript
+  endpointOut: number;
 }
 
 type StepType = 'camera' | 'form' | 'qr';
 
 const AssetCreatorFAB: React.FC = () => {
-  const { token } = useAuth(); // Get token from auth context
+  const { token } = useAuth();
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [currentStep, setCurrentStep] = useState<StepType>('camera');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -88,9 +88,10 @@ const AssetCreatorFAB: React.FC = () => {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [selectedSchool, setSelectedSchool] = useState<string>('');
-  const [bluetoothPrinter, setBluetoothPrinter] = useState<BluetoothPrinter | null>(null);
+  const [usbPrinter, setUsbPrinter] = useState<USBPrinter | null>(null);
   const [qrData, setQrData] = useState<QRData | null>(null);
   const [status, setStatus] = useState<StatusState>({ type: '', message: '' });
+  const [printerProtocol, setPrinterProtocol] = useState<'ZPL' | 'TSPL'>('ZPL');
   const [formData, setFormData] = useState<FormData>({
     name: '',
     price: '',
@@ -429,230 +430,219 @@ const AssetCreatorFAB: React.FC = () => {
     }
   };
 
-  const connectBluetooth = async (): Promise<void> => {
+  // =====================
+  // USB Connection Functions
+  // =====================
+  const connectUSB = async (): Promise<void> => {
     try {
       setIsLoading(true);
-      const device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }]
+      
+      // Request USB device - filters for common label printer vendors
+      const device = await (navigator as any).usb.requestDevice({
+        filters: [
+          { vendorId: 0x0483 }, // STMicroelectronics (common in Chinese printers)
+          { vendorId: 0x1504 }, // POS printers
+          { vendorId: 0x28e9 }, // Some Xprinter models
+          { vendorId: 0x04b8 }, // Epson
+          { vendorId: 0x1fc9 }, // NXP (some thermal printers)
+        ]
       });
       
-      if (!device.gatt) {
-        throw new Error('GATT not available');
+      await device.open();
+      
+      if (device.configuration === null) {
+        await device.selectConfiguration(1);
       }
       
-      const server = await device.gatt.connect();
-      const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-      const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+      await device.claimInterface(0);
       
-      setBluetoothPrinter({ device, characteristic });
-      setStatus({ type: 'success', message: 'Impresora conectada exitosamente' });
+      // Find the OUT endpoint
+      const interface_ = device.configuration.interfaces[0];
+      const alternate = interface_.alternate;
+      const outEndpoint = alternate.endpoints.find((ep: any) => ep.direction === 'out');
+      
+      if (!outEndpoint) {
+        throw new Error('No se encontró endpoint de salida');
+      }
+      
+      setUsbPrinter({ 
+        device, 
+        endpointOut: outEndpoint.endpointNumber 
+      });
+      setStatus({ type: 'success', message: 'Impresora USB conectada exitosamente' });
     } catch (error) {
-      setStatus({ type: 'error', message: 'Error al conectar con la impresora' });
-      console.error('Bluetooth error:', error);
+      setStatus({ type: 'error', message: 'Error al conectar impresora USB. Verifique que esté conectada.' });
+      console.error('USB connection error:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-// =====================
-// Función principal
-// =====================
-// =====================
-// Función principal
-// =====================
-const printQR = async (): Promise<void> => {
-  if (!qrData) return;
+  // =====================
+  // Label Generation Functions
+  // =====================
+  const generateZPLLabel = (qrText: string, name: string, school: string, classroom: string): string => {
+    return `^XA
+^MMT
+^PW406
+^LL0203
+^LS0
+^FT30,50^BQN,2,6
+^FH\\^FDLA,${qrText}^FS
+^FT30,170^A0N,20,20^FH\\^FD${name}^FS
+^FT30,195^A0N,15,15^FH\\^FD${school} - ${classroom}^FS
+^XZ`;
+  };
 
-  if (!bluetoothPrinter) {
-    await connectBluetooth();
-    if (!bluetoothPrinter) return;
-  }
+  const generateTSPLLabel = (qrText: string, name: string, school: string, classroom: string): string => {
+    return `SIZE 50 mm, 25 mm
+GAP 2 mm, 0
+DIRECTION 1
+REFERENCE 0,0
+OFFSET 0 mm
+SET PEEL OFF
+SET CUTTER OFF
+SET PARTIAL_CUTTER OFF
+SET TEAR ON
+CLS
+QRCODE 20,20,L,5,A,0,"${qrText}"
+TEXT 20,130,"2",0,1,1,"${name}"
+TEXT 20,150,"1",0,1,1,"${school} - ${classroom}"
+PRINT 1,1`;
+  };
 
-  try {
-    setIsLoading(true);
+  const generateESCPOSLabel = (qrText: string, name: string, school: string, classroom: string): string => {
+    // ESC/POS commands for basic thermal printers
+    const ESC = '\x1B';
+    const GS = '\x1D';
+    
+    return `${ESC}@` + // Initialize
+           `${GS}k${String.fromCharCode(11)}${String.fromCharCode(qrText.length)}${qrText}` + // QR Code
+           '\n\n' +
+           `${ESC}a1` + // Center align
+           name + '\n' +
+           `${school} - ${classroom}` + '\n' +
+           '\n\n\n' +
+           `${GS}V1`; // Cut paper
+  };
 
-    let base64Image = qrData.qr_url;
-    if (!qrData.qr_url.startsWith('data:')) {
-      const response = await fetch(qrData.qr_url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const blob = await response.blob();
-      base64Image = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      });
+  // =====================
+  // Printing Functions
+  // =====================
+  const printQR = async (): Promise<void> => {
+    if (!qrData) return;
+
+    if (!usbPrinter) {
+      await connectUSB();
+      if (!usbPrinter) return;
     }
 
-    const commands: Uint8Array[] = [];
+    try {
+      setIsLoading(true);
 
-    // Reset impresora
-    commands.push(new Uint8Array([0x1B, 0x40]));
-
-    // Altura de etiqueta fija: 200px (25 mm)
-    const qrCommands = await generateFullSticker(base64Image, 200); 
-    commands.push(...qrCommands);
-
-    // Avanzar altura etiqueta + gap
-    const labelHeightDots = 200; // 25 mm
-    const gapDots = 12;          // 1–1.5 mm
-    const advance = labelHeightDots + gapDots;
-
-    // ESC J n → avanzar n dots (0–255)
-    commands.push(new Uint8Array([0x1B, 0x4A, advance & 0xFF]));
-
-    // Corte (si tu impresora tiene cutter)
-    commands.push(new Uint8Array([0x1D, 0x56, 0x01])); 
-
-    // Enviar
-    for (const command of commands) {
-      await sendChunked(command);
-    }
-
-    setStatus({ type: 'success', message: 'Etiqueta QR impresa correctamente' });
-  } catch (error) {
-    setStatus({ type: 'error', message: 'Error al imprimir etiqueta QR' });
-    console.error('Print error:', error);
-  } finally {
-    setIsLoading(false);
-  }
-};
-
-// =====================
-// Generar bloque completo de etiqueta
-// =====================
-const generateFullSticker = async (
-  base64: string,
-  stickerHeight: number = 200 // 25mm = 200px
-): Promise<Uint8Array[]> => {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-
-      const printerWidth = 576; // ancho impresora (80mm)
-      const qrSize = 160;       // QR más chico que etiqueta
-
-      canvas.width = printerWidth;
-      canvas.height = stickerHeight;
-
-      if (!ctx) return resolve([]);
-
-      // Fondo blanco
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Centrar QR
-      const xOffset = (canvas.width - qrSize) / 2;
-      const yOffset = (stickerHeight - qrSize) / 2;
-      ctx.drawImage(img, xOffset, yOffset, qrSize, qrSize);
-
-      // Convertir a bitmap monocromo
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const commands: Uint8Array[] = [];
-      const bytesPerLine = Math.ceil(canvas.width / 8);
-      const bitmapData = new Uint8Array(bytesPerLine * canvas.height);
-
-      for (let y = 0; y < canvas.height; y++) {
-        for (let x = 0; x < canvas.width; x++) {
-          const i = (y * canvas.width + x) * 4;
-          const gray =
-            0.299 * imageData.data[i] +
-            0.587 * imageData.data[i + 1] +
-            0.114 * imageData.data[i + 2];
-          if (gray < 128) {
-            bitmapData[y * bytesPerLine + (x >> 3)] |= 1 << (7 - (x % 8));
-          }
-        }
+      let labelCommand = '';
+      
+      switch (printerProtocol) {
+        case 'ZPL':
+          labelCommand = generateZPLLabel(
+            qrData.qr_url, 
+            qrData.name, 
+            qrData.school, 
+            qrData.classroom
+          );
+          break;
+        case 'TSPL':
+          labelCommand = generateTSPLLabel(
+            qrData.qr_url, 
+            qrData.name, 
+            qrData.school, 
+            qrData.classroom
+          );
+          break;
+        default:
+          labelCommand = generateESCPOSLabel(
+            qrData.qr_url, 
+            qrData.name, 
+            qrData.school, 
+            qrData.classroom
+          );
       }
 
-      // Enviar en bloques
-      const blockHeight = 24;
-      for (let y = 0; y < canvas.height; y += blockHeight) {
-        const h = Math.min(blockHeight, canvas.height - y);
-        const slice = bitmapData.slice(y * bytesPerLine, (y + h) * bytesPerLine);
+      console.log('Sending label command:', labelCommand);
+      
+      // Send command to printer
+      const encoder = new TextEncoder();
+      const data = encoder.encode(labelCommand);
+      
+      await usbPrinter.device.transferOut(usbPrinter.endpointOut, data);
 
-        const xL = bytesPerLine & 0xff;
-        const xH = (bytesPerLine >> 8) & 0xff;
-        const yL = h & 0xff;
-        const yH = (h >> 8) & 0xff;
+      setStatus({ type: 'success', message: 'Etiqueta QR impresa correctamente' });
+    } catch (error) {
+      setStatus({ type: 'error', message: 'Error al imprimir etiqueta QR' });
+      console.error('Print error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-        commands.push(
-          new Uint8Array([0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH])
-        );
-
-        for (let i = 0; i < slice.length; i += 100) {
-          commands.push(slice.slice(i, i + 100));
+  const printMultipleStickers = async (quantity: number = 1): Promise<void> => {
+    if (quantity < 1 || quantity > 10) {
+      setStatus({ type: 'error', message: 'Cantidad debe estar entre 1 y 10' });
+      return;
+    }
+    
+    try {
+      for (let i = 0; i < quantity; i++) {
+        await printQR();
+        
+        // Short pause between labels
+        if (i < quantity - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
       }
-
-      resolve(commands);
-    };
-    img.src = base64;
-  });
-};
-
-
-
-const sendChunked = async (command: Uint8Array): Promise<void> => {
-  const buffer = new ArrayBuffer(command.length);
-  const view = new Uint8Array(buffer);
-  view.set(command);
-
-  await bluetoothPrinter!.characteristic.writeValue(buffer);
-  await new Promise(resolve => setTimeout(resolve, command.length <= 8 ? 10 : 30));
-};
-
-
-
-
-// Función para imprimir múltiples pegatinas
-const printMultipleStickers = async (quantity: number = 1): Promise<void> => {
-  if (quantity < 1 || quantity > 5) {
-    throw new Error('Cantidad debe estar entre 1 y 5 para pegatinas');
-  }
-  
-  
-  for (let i = 0; i < quantity; i++) {
-    await printQR();
-    
-    // Pausa más corta entre pegatinas pequeñas
-    if (i < quantity - 1) {
-      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      setStatus({ type: 'success', message: `${quantity} etiqueta(s) impresa(s) exitosamente` });
+    } catch (error) {
+      setStatus({ type: 'error', message: 'Error al imprimir múltiples etiquetas' });
+      console.error('Multiple print error:', error);
     }
-  }
-  
-  setStatus({ type: 'success', message: `${quantity} pegatina(s) impresas exitosamente` });
-};
+  };
 
-// Función de prueba simplificada
-const testPrinterConnection = async (): Promise<void> => {
-  if (!bluetoothPrinter?.characteristic) {
-    throw new Error('Impresora no conectada');
-  }
-  
-  try {
-    // Reset de impresora
-    const resetCommand = new Uint8Array([0x1B, 0x40]);
-    const resetBuffer = new ArrayBuffer(resetCommand.length);
-    const resetView = new Uint8Array(resetBuffer);
-    resetView.set(resetCommand);
-    await bluetoothPrinter.characteristic.writeValue(resetBuffer);
+  const testPrinterConnection = async (): Promise<void> => {
+    if (!usbPrinter) {
+      setStatus({ type: 'error', message: 'No hay impresora conectada' });
+      return;
+    }
     
-    // Texto de prueba
-    const testText = new TextEncoder().encode('TEST PEGATINA OK\n\n\n');
-    const textBuffer = new ArrayBuffer(testText.length);
-    const textView = new Uint8Array(textBuffer);
-    textView.set(testText);
-    await bluetoothPrinter.characteristic.writeValue(textBuffer);
-    
-    setStatus({ type: 'success', message: 'Prueba de impresora exitosa' });
-  } catch (error) {
-    throw new Error('Fallo en prueba de impresora');
-  }
-};
-// Ya no necesitamos esta función, está integrada en printImageBase64
+    try {
+      setIsLoading(true);
+      
+      let testCommand = '';
+      
+      switch (printerProtocol) {
+        case 'ZPL':
+          testCommand = '^XA^FO50,50^A0N,30,30^FDTEST PRINT OK^FS^XZ';
+          break;
+        case 'TSPL':
+          testCommand = 'SIZE 50 mm, 25 mm\nCLS\nTEXT 20,50,"3",0,1,1,"TEST PRINT OK"\nPRINT 1,1';
+          break;
+        default:
+          testCommand = '\x1B@TEST PRINT OK\n\n\n\x1DVA';
+      }
+      
+      const encoder = new TextEncoder();
+      const data = encoder.encode(testCommand);
+      await usbPrinter.device.transferOut(usbPrinter.endpointOut, data);
+      
+      setStatus({ type: 'success', message: 'Prueba de impresora exitosa' });
+    } catch (error) {
+      setStatus({ type: 'error', message: 'Error en prueba de impresora' });
+      console.error('Test print error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const downloadQR = async (): Promise<void> => {
     if (!qrData || !qrData.qr_url) return;
 
@@ -833,19 +823,6 @@ const testPrinterConnection = async (): Promise<void> => {
                       />
                     </div>
                   )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Nombre del objeto *
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.name}
-                      onChange={(e) => handleInputChange('name', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
-                      placeholder="Ingrese el nombre"
-                    />
-                  </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1043,7 +1020,66 @@ const testPrinterConnection = async (): Promise<void> => {
                     <p className="text-sm text-gray-600">{qrData.school} - {qrData.classroom}</p>
                   </div>
 
+                  {/* Printer Protocol Selection */}
+                  <div className="bg-blue-50 p-4 rounded-lg">
+                    <h4 className="text-sm font-medium text-blue-800 mb-2">Configuración de Impresora</h4>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-blue-700">Protocolo:</span>
+                        <select
+                          value={printerProtocol}
+                          onChange={(e) => setPrinterProtocol(e.target.value as 'ZPL' | 'TSPL')}
+                          className="text-xs px-2 py-1 border border-blue-300 rounded"
+                        >
+                          <option value="ZPL">ZPL (Zebra)</option>
+                          <option value="TSPL">TSPL (TSC/Xprinter)</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-blue-700">Estado USB:</span>
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          usbPrinter ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {usbPrinter ? 'Conectada' : 'Desconectada'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="space-y-3">
+                    {/* USB Connection Button */}
+                    {!usbPrinter && (
+                      <button
+                        onClick={connectUSB}
+                        disabled={isLoading}
+                        className="w-full bg-purple-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
+                      >
+                        {isLoading ? (
+                          <Loader className="w-5 h-5 animate-spin mr-2" />
+                        ) : (
+                          <Usb className="w-5 h-5 mr-2" />
+                        )}
+                        Conectar Impresora USB
+                      </button>
+                    )}
+
+                    {/* Test Print Button */}
+                    {usbPrinter && (
+                      <button
+                        onClick={testPrinterConnection}
+                        disabled={isLoading}
+                        className="w-full bg-yellow-600 text-white py-2 px-4 rounded-lg font-medium flex items-center justify-center"
+                      >
+                        {isLoading ? (
+                          <Loader className="w-4 h-4 animate-spin mr-2" />
+                        ) : (
+                          <Printer className="w-4 h-4 mr-2" />
+                        )}
+                        Prueba de Impresión
+                      </button>
+                    )}
+
+                    {/* Print Single QR Button */}
                     <button
                       onClick={printQR}
                       disabled={isLoading}
@@ -1054,8 +1090,33 @@ const testPrinterConnection = async (): Promise<void> => {
                       ) : (
                         <Printer className="w-5 h-5 mr-2" />
                       )}
-                      Imprimir QR
+                      Imprimir Etiqueta QR
                     </button>
+
+                    {/* Print Multiple QRs */}
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => printMultipleStickers(2)}
+                        disabled={isLoading}
+                        className="flex-1 bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
+                      >
+                        Imprimir 2x
+                      </button>
+                      <button
+                        onClick={() => printMultipleStickers(3)}
+                        disabled={isLoading}
+                        className="flex-1 bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
+                      >
+                        Imprimir 3x
+                      </button>
+                      <button
+                        onClick={() => printMultipleStickers(5)}
+                        disabled={isLoading}
+                        className="flex-1 bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
+                      >
+                        Imprimir 5x
+                      </button>
+                    </div>
 
                     <button
                       onClick={downloadQR}
