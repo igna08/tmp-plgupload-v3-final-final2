@@ -123,6 +123,13 @@ PRINT 1,1
 `;
   };
 
+  // Convertir string a hexadecimal
+  const stringToHex = (str: string): string => {
+    return Array.from(str)
+      .map(c => c.charCodeAt(0).toString(16).padStart(2, '0'))
+      .join('');
+  };
+
   // Abrir RawBT directamente con el archivo TSPL
   const openRawBTWithTSPL = (qrText: string, name: string, school: string, classroom: string, quantity: number = 1): void => {
     try {
@@ -152,9 +159,9 @@ PRINT 1,1
         }
       }
 
-      // Crear el URI de datos para RawBT
-      const encodedContent = encodeURIComponent(tsplContent);
-      const rawbtUri = `rawbt://print?data=${encodedContent}`;
+      // Convertir a hexadecimal para RawBT
+      const hexContent = stringToHex(tsplContent);
+      const rawbtUri = `rawbt://printhex/${hexContent}`;
       
       // Intentar abrir RawBT directamente
       window.location.href = rawbtUri;
