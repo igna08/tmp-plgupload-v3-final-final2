@@ -195,17 +195,156 @@ PRINT 1,1
   };
 
   // Función principal para abrir RawBT
-  const handleOpenRawBT = (quantity: number = 1): void => {
-    if (!qrData) return;
-    
-    openRawBTWithTSPL(
+// Función mejorada para abrir RawBT de manera más confiable
+const handleOpenRawBT = async (quantity: number = 1): Promise<void> => {
+  if (!qrData) return;
+
+  try {
+    // Generar contenido TSPL mejorado
+    const tsplContent = generateImprovedTSPL(
       qrData.qr_url,
       qrData.name,
       qrData.school,
       qrData.classroom,
       quantity
     );
-  };
+
+    // Método 1: Intentar usar Web Share API (más confiable en Android)
+    if (navigator.share && navigator.canShare) {
+      const file = new File([tsplContent], "etiquetas.prn", { 
+        type: "text/plain" 
+      });
+      
+      const canShareFile = navigator.canShare({ files: [file] });
+      
+      if (canShareFile) {
+        await navigator.share({
+          files: [file],
+          title: "Etiquetas para imprimir",
+          text: `${quantity} etiqueta(s) - Abrir con RawBT`
+        });
+        
+        setStatus({ 
+          type: 'success', 
+          message: `Archivo enviado al menú compartir. Selecciona RawBT.` 
+        });
+        return;
+      }
+    }
+
+    // Método 2: Intentar intent:// para Android
+    const intentUrl = `intent://print/#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.data=${encodeURIComponent(tsplContent)};end`;
+    
+    // Crear un enlace temporal y hacer clic
+    const link = document.createElement('a');
+    link.href = intentUrl;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    setStatus({ 
+      type: 'success', 
+      message: `Intentando abrir RawBT directamente...` 
+    });
+    
+    // Fallback automático después de 3 segundos
+    setTimeout(() => {
+      downloadPRNFile(tsplContent, `etiquetas_${quantity}x`);
+      setStatus({ 
+        type: 'success', 
+        message: 'Si RawBT no se abrió, se descargó el archivo .prn como respaldo.' 
+      });
+    }, 3000);
+
+  } catch (error) {
+    console.error('Error opening RawBT:', error);
+    
+    // Fallback: descargar archivo
+    const tsplContent = generateImprovedTSPL(
+      qrData.qr_url,
+      qrData.name,
+      qrData.school,
+      qrData.classroom,
+      quantity
+    );
+    
+    downloadPRNFile(tsplContent, `etiquetas_${quantity}x`);
+    setStatus({ 
+      type: 'error', 
+      message: 'No se pudo abrir RawBT. Archivo descargado, ábrelo manualmente en RawBT.' 
+    });
+  }
+};
+
+// Generar TSPL mejorado con configuraciones adicionales
+const generateImprovedTSPL = (qrText: string, name: string, school: string, classroom: string, quantity: number = 1): string => {
+  let tsplContent = `SIZE 50 mm, 25 mm
+GAP 2 mm, 0
+SPEED 4
+DENSITY 12
+DIRECTION 1
+REFERENCE 0,0
+OFFSET 0 mm
+SET PEEL OFF
+SET CUTTER OFF
+SET PARTIAL_CUTTER OFF
+SET TEAR ON
+CLS
+`;
+
+  // Generar múltiples etiquetas
+  for (let i = 0; i < quantity; i++) {
+    tsplContent += `QRCODE 10,10,L,4,A,0,"${qrText}"
+TEXT 120,20,"2",0,1,1,"${name.substring(0, 18)}"
+TEXT 120,45,"1",0,1,1,"${school.substring(0, 15)}"
+TEXT 120,65,"1",0,1,1,"${classroom.substring(0, 15)}"
+PRINT 1,1
+`;
+    
+    if (i < quantity - 1) {
+      tsplContent += 'CLS\n';
+    }
+  }
+
+  return tsplContent;
+};
+
+// Descargar como archivo .prn (mejor compatibilidad que .tspl)
+const downloadPRNFile = (content: string, filename: string = 'etiqueta'): void => {
+  try {
+    const blob = new Blob([content], { type: 'text/plain' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${filename}.prn`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+  } catch (error) {
+    console.error('Error downloading PRN file:', error);
+  }
+};
+
+// Función alternativa para dispositivos que soportan only descarga
+const handleDownloadForRawBT = (quantity: number = 1): void => {
+  if (!qrData) return;
+  
+  const tsplContent = generateImprovedTSPL(
+    qrData.qr_url,
+    qrData.name,
+    qrData.school,
+    qrData.classroom,
+    quantity
+  );
+  
+  downloadPRNFile(tsplContent, `QR_${qrData.name}_${quantity}x_${Date.now()}`);
+  
+  setStatus({ 
+    type: 'success', 
+    message: `Archivo .prn descargado con ${quantity} etiqueta(s). Ábrelo en RawBT para imprimir.` 
+  });
+};
 
   // Descargar archivo TSPL como fallback
   const downloadTSPLFile = (tsplContent: string, filename: string = 'etiqueta'): void => {
