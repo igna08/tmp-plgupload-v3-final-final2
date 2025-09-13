@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Plus, X, Save, Printer, Download, Check, AlertCircle, Loader, Usb } from 'lucide-react';
+import { Camera, Plus, X, Save, Printer, Download, Check, AlertCircle, Loader, Usb, FileDown } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
@@ -70,7 +70,7 @@ interface StatusState {
 }
 
 interface USBPrinter {
-  device: any; // USBDevice type not available in standard TypeScript
+  device: any;
   endpointOut: number;
 }
 
@@ -91,7 +91,7 @@ const AssetCreatorFAB: React.FC = () => {
   const [usbPrinter, setUsbPrinter] = useState<USBPrinter | null>(null);
   const [qrData, setQrData] = useState<QRData | null>(null);
   const [status, setStatus] = useState<StatusState>({ type: '', message: '' });
-  const [printerProtocol, setPrinterProtocol] = useState<'ZPL' | 'TSPL'>('ZPL');
+  const [printerProtocol, setPrinterProtocol] = useState<'ZPL' | 'TSPL'>('TSPL');
   const [formData, setFormData] = useState<FormData>({
     name: '',
     price: '',
@@ -106,7 +106,124 @@ const AssetCreatorFAB: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Load data only when token is available
+  // =====================
+  // FUNCIONES TSPL PARA RAWBT
+  // =====================
+
+  // Generar comandos TSPL optimizados para etiquetas 50x25mm
+  const generateTSPLForRawBT = (qrText: string, name: string, school: string, classroom: string): string => {
+    return `SIZE 50 mm, 25 mm
+GAP 2 mm, 0
+DIRECTION 1
+REFERENCE 0,0
+OFFSET 0 mm
+SET PEEL OFF
+SET CUTTER OFF
+SET PARTIAL_CUTTER OFF
+SET TEAR ON
+CLS
+QRCODE 10,10,L,4,A,0,"${qrText}"
+TEXT 120,20,"2",0,1,1,"${name.substring(0, 18)}"
+TEXT 120,45,"1",0,1,1,"${school.substring(0, 15)}"
+TEXT 120,65,"1",0,1,1,"${classroom.substring(0, 15)}"
+PRINT 1,1
+`;
+  };
+
+  // Descargar archivo TSPL individual
+  const downloadTSPLFile = (tsplContent: string, filename: string = 'etiqueta'): void => {
+    try {
+      const blob = new Blob([tsplContent], { type: 'text/plain' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${filename}.tspl`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+      
+      setStatus({ 
+        type: 'success', 
+        message: 'Archivo TSPL descargado. Úsalo con RawBT para imprimir.' 
+      });
+    } catch (error) {
+      setStatus({ 
+        type: 'error', 
+        message: 'Error al generar archivo TSPL' 
+      });
+      console.error('Error downloading TSPL:', error);
+    }
+  };
+
+  // Descargar múltiples etiquetas TSPL
+  const downloadMultipleTSPLFile = (qrText: string, name: string, school: string, classroom: string, quantity: number): void => {
+    try {
+      let tsplContent = `SIZE 50 mm, 25 mm
+GAP 2 mm, 0
+DIRECTION 1
+REFERENCE 0,0
+OFFSET 0 mm
+SET PEEL OFF
+SET CUTTER OFF
+SET PARTIAL_CUTTER OFF
+SET TEAR ON
+CLS
+`;
+
+      // Generar múltiples etiquetas
+      for (let i = 0; i < quantity; i++) {
+        tsplContent += `QRCODE 10,10,L,4,A,0,"${qrText}"
+TEXT 120,20,"2",0,1,1,"${name.substring(0, 18)}"
+TEXT 120,45,"1",0,1,1,"${school.substring(0, 15)}"
+TEXT 120,65,"1",0,1,1,"${classroom.substring(0, 15)}"
+PRINT 1,1
+`;
+        
+        if (i < quantity - 1) {
+          tsplContent += 'CLS\n';
+        }
+      }
+
+      const blob = new Blob([tsplContent], { type: 'text/plain' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `etiquetas_${quantity}x.tspl`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+      
+      setStatus({ 
+        type: 'success', 
+        message: `${quantity} etiquetas TSPL descargadas para RawBT` 
+      });
+    } catch (error) {
+      setStatus({ 
+        type: 'error', 
+        message: 'Error al generar archivo TSPL múltiple' 
+      });
+      console.error('Error downloading multiple TSPL:', error);
+    }
+  };
+
+  // Función principal para descargar TSPL
+  const handleDownloadTSPL = (): void => {
+    if (!qrData) return;
+    
+    const tsplContent = generateTSPLForRawBT(
+      qrData.qr_url,
+      qrData.name,
+      qrData.school,
+      qrData.classroom
+    );
+    
+    downloadTSPLFile(tsplContent, `QR_${qrData.name}_${Date.now()}`);
+  };
+
+  // =====================
+  // FUNCIONES ORIGINALES
+  // =====================
+
   useEffect(() => {
     if (token) {
       loadSchools();
@@ -115,14 +232,12 @@ const AssetCreatorFAB: React.FC = () => {
     }
   }, [token]);
 
-  // Load classrooms when school changes
   useEffect(() => {
     if (selectedSchool && token) {
       loadClassrooms(selectedSchool);
     }
   }, [selectedSchool, token]);
 
-  // Cleanup camera stream on unmount or when modal closes
   useEffect(() => {
     return () => {
       cleanupCamera();
@@ -242,7 +357,6 @@ const AssetCreatorFAB: React.FC = () => {
     try {
       setIsLoading(true);
       
-      // Clean up any existing stream first
       cleanupCamera();
       
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -257,7 +371,6 @@ const AssetCreatorFAB: React.FC = () => {
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        // Wait for video to be ready
         await new Promise<void>((resolve) => {
           if (videoRef.current) {
             videoRef.current.onloadedmetadata = () => resolve();
@@ -280,7 +393,6 @@ const AssetCreatorFAB: React.FC = () => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
     
-    // Ensure video dimensions are available
     if (video.videoWidth === 0 || video.videoHeight === 0) {
       setStatus({ type: 'error', message: 'Video no está listo para capturar' });
       return;
@@ -298,7 +410,6 @@ const AssetCreatorFAB: React.FC = () => {
     setCapturedImage(imageData);
     setCurrentStep('form');
     
-    // Clean up camera after capture
     cleanupCamera();
     setStatus({ type: 'success', message: 'Foto capturada exitosamente' });
   };
@@ -342,7 +453,6 @@ const AssetCreatorFAB: React.FC = () => {
     try {
       let templateId = formData.template_id;
 
-      // Create new template only if user chooses to create new one
       if (!formData.use_existing_template) {
         console.log('Creating new template at:', `${API_BASE_URL}/assets/templates/`);
         const templateResponse = await fetch(`${API_BASE_URL}/assets/templates/`, {
@@ -368,7 +478,6 @@ const AssetCreatorFAB: React.FC = () => {
         templateId = template.id;
       }
 
-      // Create the asset using existing or newly created template
       console.log('Creating asset at:', `${API_BASE_URL}/assets/`);
       const assetResponse = await fetch(`${API_BASE_URL}/assets/`, {
         method: 'POST',
@@ -393,7 +502,6 @@ const AssetCreatorFAB: React.FC = () => {
       const asset = await assetResponse.json();
       console.log('Asset created:', asset);
 
-      // Generate QR Code
       console.log('Generating QR at:', `${API_BASE_URL}/assets/${asset.id}/qr-codes/`);
       const qrResponse = await fetch(`${API_BASE_URL}/assets/${asset.id}/qr-codes/`, {
         method: 'POST',
@@ -437,14 +545,13 @@ const AssetCreatorFAB: React.FC = () => {
     try {
       setIsLoading(true);
       
-      // Request USB device - filters for common label printer vendors
       const device = await (navigator as any).usb.requestDevice({
         filters: [
-          { vendorId: 0x0483 }, // STMicroelectronics (common in Chinese printers)
-          { vendorId: 0x1504 }, // POS printers
-          { vendorId: 0x28e9 }, // Some Xprinter models
-          { vendorId: 0x04b8 }, // Epson
-          { vendorId: 0x1fc9 }, // NXP (some thermal printers)
+          { vendorId: 0x0483 },
+          { vendorId: 0x1504 },
+          { vendorId: 0x28e9 },
+          { vendorId: 0x04b8 },
+          { vendorId: 0x1fc9 },
         ]
       });
       
@@ -456,7 +563,6 @@ const AssetCreatorFAB: React.FC = () => {
       
       await device.claimInterface(0);
       
-      // Find the OUT endpoint
       const interface_ = device.configuration.interfaces[0];
       const alternate = interface_.alternate;
       const outEndpoint = alternate.endpoints.find((ep: any) => ep.direction === 'out');
@@ -511,21 +617,6 @@ TEXT 20,150,"1",0,1,1,"${school} - ${classroom}"
 PRINT 1,1`;
   };
 
-  const generateESCPOSLabel = (qrText: string, name: string, school: string, classroom: string): string => {
-    // ESC/POS commands for basic thermal printers
-    const ESC = '\x1B';
-    const GS = '\x1D';
-    
-    return `${ESC}@` + // Initialize
-           `${GS}k${String.fromCharCode(11)}${String.fromCharCode(qrText.length)}${qrText}` + // QR Code
-           '\n\n' +
-           `${ESC}a1` + // Center align
-           name + '\n' +
-           `${school} - ${classroom}` + '\n' +
-           '\n\n\n' +
-           `${GS}V1`; // Cut paper
-  };
-
   // =====================
   // Printing Functions
   // =====================
@@ -559,18 +650,10 @@ PRINT 1,1`;
             qrData.classroom
           );
           break;
-        default:
-          labelCommand = generateESCPOSLabel(
-            qrData.qr_url, 
-            qrData.name, 
-            qrData.school, 
-            qrData.classroom
-          );
       }
 
       console.log('Sending label command:', labelCommand);
       
-      // Send command to printer
       const encoder = new TextEncoder();
       const data = encoder.encode(labelCommand);
       
@@ -595,7 +678,6 @@ PRINT 1,1`;
       for (let i = 0; i < quantity; i++) {
         await printQR();
         
-        // Short pause between labels
         if (i < quantity - 1) {
           await new Promise(resolve => setTimeout(resolve, 500));
         }
@@ -626,8 +708,6 @@ PRINT 1,1`;
         case 'TSPL':
           testCommand = 'SIZE 50 mm, 25 mm\nCLS\nTEXT 20,50,"3",0,1,1,"TEST PRINT OK"\nPRINT 1,1';
           break;
-        default:
-          testCommand = '\x1B@TEST PRINT OK\n\n\n\x1DVA';
       }
       
       const encoder = new TextEncoder();
@@ -647,7 +727,6 @@ PRINT 1,1`;
     if (!qrData || !qrData.qr_url) return;
 
     try {
-      // If it's already a data URL, use it directly
       if (qrData.qr_url.startsWith('data:')) {
         const link = document.createElement('a');
         link.download = `QR_${qrData.name}_${Date.now()}.png`;
@@ -656,7 +735,6 @@ PRINT 1,1`;
         return;
       }
 
-      // If it's a URL, fetch the image and convert to blob
       const response = await fetch(qrData.qr_url, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -675,7 +753,6 @@ PRINT 1,1`;
       link.href = url;
       link.click();
       
-      // Clean up the blob URL
       URL.revokeObjectURL(url);
       
       setStatus({ type: 'success', message: 'QR descargado exitosamente' });
@@ -686,7 +763,7 @@ PRINT 1,1`;
   };
 
   const resetForm = (): void => {
-    cleanupCamera(); // Clean up camera before resetting
+    cleanupCamera();
     setCurrentStep('camera');
     setCapturedImage(null);
     setQrData(null);
@@ -706,14 +783,14 @@ PRINT 1,1`;
   };
 
   const handleClose = (): void => {
-    cleanupCamera(); // Properly clean up camera
+    cleanupCamera();
     setIsExpanded(false);
     resetForm();
   };
 
   const handleStepBack = (): void => {
     if (currentStep === 'form') {
-      cleanupCamera(); // Clean up when going back to camera
+      cleanupCamera();
       setCurrentStep('camera');
     }
   };
@@ -943,7 +1020,7 @@ PRINT 1,1`;
                       onChange={(e) => {
                         setSelectedSchool(e.target.value);
                         handleInputChange('school_id', e.target.value);
-                        handleInputChange('classroom_id', ''); // Reset classroom
+                        handleInputChange('classroom_id', '');
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
                     >
@@ -1058,6 +1135,49 @@ PRINT 1,1`;
                   </div>
 
                   <div className="space-y-3">
+                    {/* NUEVA SECCIÓN: Botones RawBT */}
+                    <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+                      <h4 className="text-sm font-medium text-orange-800 mb-3 flex items-center">
+                        <FileDown className="w-4 h-4 mr-2" />
+                        Imprimir con RawBT (Recomendado)
+                      </h4>
+                      
+                      {/* Botón principal TSPL */}
+                      <button
+                        onClick={handleDownloadTSPL}
+                        className="w-full bg-orange-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center mb-3"
+                      >
+                        <FileDown className="w-5 h-5 mr-2" />
+                        Descargar TSPL para RawBT
+                      </button>
+
+                      {/* Botones múltiples TSPL */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          onClick={() => downloadMultipleTSPLFile(qrData.qr_url, qrData.name, qrData.school, qrData.classroom, 2)}
+                          className="bg-orange-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
+                        >
+                          2x TSPL
+                        </button>
+                        <button
+                          onClick={() => downloadMultipleTSPLFile(qrData.qr_url, qrData.name, qrData.school, qrData.classroom, 3)}
+                          className="bg-orange-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
+                        >
+                          3x TSPL
+                        </button>
+                        <button
+                          onClick={() => downloadMultipleTSPLFile(qrData.qr_url, qrData.name, qrData.school, qrData.classroom, 5)}
+                          className="bg-orange-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
+                        >
+                          5x TSPL
+                        </button>
+                      </div>
+                      
+                      <p className="text-xs text-orange-700 mt-2 text-center">
+                        Descarga el archivo .tspl y ábrelo con RawBT en tu móvil
+                      </p>
+                    </div>
+
                     {/* USB Connection Button */}
                     {!usbPrinter && (
                       <button
@@ -1086,7 +1206,7 @@ PRINT 1,1`;
                         ) : (
                           <Printer className="w-4 h-4 mr-2" />
                         )}
-                        Prueba de Impresión
+                        Prueba de Impresión USB
                       </button>
                     )}
 
@@ -1101,7 +1221,7 @@ PRINT 1,1`;
                       ) : (
                         <Printer className="w-5 h-5 mr-2" />
                       )}
-                      Imprimir Etiqueta QR
+                      Imprimir USB Directo
                     </button>
 
                     {/* Print Multiple QRs */}
@@ -1111,21 +1231,21 @@ PRINT 1,1`;
                         disabled={isLoading}
                         className="flex-1 bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
                       >
-                        Imprimir 2x
+                        Imprimir 2x USB
                       </button>
                       <button
                         onClick={() => printMultipleStickers(3)}
                         disabled={isLoading}
                         className="flex-1 bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
                       >
-                        Imprimir 3x
+                        Imprimir 3x USB
                       </button>
                       <button
                         onClick={() => printMultipleStickers(5)}
                         disabled={isLoading}
                         className="flex-1 bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
                       >
-                        Imprimir 5x
+                        Imprimir 5x USB
                       </button>
                     </div>
 
@@ -1134,7 +1254,7 @@ PRINT 1,1`;
                       className="w-full bg-gray-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
                     >
                       <Download className="w-5 h-5 mr-2" />
-                      Descargar QR
+                      Descargar QR (PNG)
                     </button>
 
                     <button
