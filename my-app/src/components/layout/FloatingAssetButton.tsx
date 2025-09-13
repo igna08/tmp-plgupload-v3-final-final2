@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Plus, X, Save, Printer, Download, Check, AlertCircle, Loader, Usb, FileDown } from 'lucide-react';
+import { Camera, Plus, X, Save, Download, Check, AlertCircle, Loader, FileDown } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
@@ -69,11 +69,6 @@ interface StatusState {
   message: string;
 }
 
-interface USBPrinter {
-  device: any;
-  endpointOut: number;
-}
-
 type StepType = 'camera' | 'form' | 'qr';
 
 const AssetCreatorFAB: React.FC = () => {
@@ -88,10 +83,8 @@ const AssetCreatorFAB: React.FC = () => {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [selectedSchool, setSelectedSchool] = useState<string>('');
-  const [usbPrinter, setUsbPrinter] = useState<USBPrinter | null>(null);
   const [qrData, setQrData] = useState<QRData | null>(null);
   const [status, setStatus] = useState<StatusState>({ type: '', message: '' });
-  const [printerProtocol, setPrinterProtocol] = useState<'ZPL' | 'TSPL'>('TSPL');
   const [formData, setFormData] = useState<FormData>({
     name: '',
     price: '',
@@ -130,33 +123,8 @@ PRINT 1,1
 `;
   };
 
-  // Descargar archivo TSPL individual
-  const downloadTSPLFile = (tsplContent: string, filename: string = 'etiqueta'): void => {
-    try {
-      const blob = new Blob([tsplContent], { type: 'text/plain' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `${filename}.tspl`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(link.href);
-      
-      setStatus({ 
-        type: 'success', 
-        message: 'Archivo TSPL descargado. Úsalo con RawBT para imprimir.' 
-      });
-    } catch (error) {
-      setStatus({ 
-        type: 'error', 
-        message: 'Error al generar archivo TSPL' 
-      });
-      console.error('Error downloading TSPL:', error);
-    }
-  };
-
-  // Descargar múltiples etiquetas TSPL
-  const downloadMultipleTSPLFile = (qrText: string, name: string, school: string, classroom: string, quantity: number): void => {
+  // Abrir RawBT directamente con el archivo TSPL
+  const openRawBTWithTSPL = (qrText: string, name: string, school: string, classroom: string, quantity: number = 1): void => {
     try {
       let tsplContent = `SIZE 50 mm, 25 mm
 GAP 2 mm, 0
@@ -170,7 +138,7 @@ SET TEAR ON
 CLS
 `;
 
-      // Generar múltiples etiquetas
+      // Generar múltiples etiquetas si es necesario
       for (let i = 0; i < quantity; i++) {
         tsplContent += `QRCODE 10,10,L,4,A,0,"${qrText}"
 TEXT 120,20,"2",0,1,1,"${name.substring(0, 18)}"
@@ -184,10 +152,46 @@ PRINT 1,1
         }
       }
 
+      // Crear el URI de datos para RawBT
+      const encodedContent = encodeURIComponent(tsplContent);
+      const rawbtUri = `rawbt://print?data=${encodedContent}`;
+      
+      // Intentar abrir RawBT directamente
+      window.location.href = rawbtUri;
+      
+      setStatus({ 
+        type: 'success', 
+        message: `Abriendo RawBT con ${quantity} etiqueta(s)...` 
+      });
+    } catch (error) {
+      setStatus({ 
+        type: 'error', 
+        message: 'Error al abrir RawBT. Asegúrate de que esté instalado.' 
+      });
+      console.error('Error opening RawBT:', error);
+    }
+  };
+
+  // Función principal para abrir RawBT
+  const handleOpenRawBT = (quantity: number = 1): void => {
+    if (!qrData) return;
+    
+    openRawBTWithTSPL(
+      qrData.qr_url,
+      qrData.name,
+      qrData.school,
+      qrData.classroom,
+      quantity
+    );
+  };
+
+  // Descargar archivo TSPL como fallback
+  const downloadTSPLFile = (tsplContent: string, filename: string = 'etiqueta'): void => {
+    try {
       const blob = new Blob([tsplContent], { type: 'text/plain' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `etiquetas_${quantity}x.tspl`;
+      link.download = `${filename}.tspl`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -195,19 +199,18 @@ PRINT 1,1
       
       setStatus({ 
         type: 'success', 
-        message: `${quantity} etiquetas TSPL descargadas para RawBT` 
+        message: 'Archivo TSPL descargado como respaldo.' 
       });
     } catch (error) {
       setStatus({ 
         type: 'error', 
-        message: 'Error al generar archivo TSPL múltiple' 
+        message: 'Error al generar archivo TSPL' 
       });
-      console.error('Error downloading multiple TSPL:', error);
+      console.error('Error downloading TSPL:', error);
     }
   };
 
-  // Función principal para descargar TSPL
-  const handleDownloadTSPL = (): void => {
+  const handleDownloadTSPLFallback = (): void => {
     if (!qrData) return;
     
     const tsplContent = generateTSPLForRawBT(
@@ -533,191 +536,6 @@ PRINT 1,1
     } catch (error) {
       setStatus({ type: 'error', message: 'Error al crear el activo' });
       console.error('Error creating asset:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // =====================
-  // USB Connection Functions
-  // =====================
-  const connectUSB = async (): Promise<void> => {
-    try {
-      setIsLoading(true);
-      
-      const device = await (navigator as any).usb.requestDevice({
-        filters: [
-          { vendorId: 0x0483 },
-          { vendorId: 0x1504 },
-          { vendorId: 0x28e9 },
-          { vendorId: 0x04b8 },
-          { vendorId: 0x1fc9 },
-        ]
-      });
-      
-      await device.open();
-      
-      if (device.configuration === null) {
-        await device.selectConfiguration(1);
-      }
-      
-      await device.claimInterface(0);
-      
-      const interface_ = device.configuration.interfaces[0];
-      const alternate = interface_.alternate;
-      const outEndpoint = alternate.endpoints.find((ep: any) => ep.direction === 'out');
-      
-      if (!outEndpoint) {
-        throw new Error('No se encontró endpoint de salida');
-      }
-      
-      setUsbPrinter({ 
-        device, 
-        endpointOut: outEndpoint.endpointNumber 
-      });
-      setStatus({ type: 'success', message: 'Impresora USB conectada exitosamente' });
-    } catch (error) {
-      setStatus({ type: 'error', message: 'Error al conectar impresora USB. Verifique que esté conectada.' });
-      console.error('USB connection error:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // =====================
-  // Label Generation Functions
-  // =====================
-  const generateZPLLabel = (qrText: string, name: string, school: string, classroom: string): string => {
-    return `^XA
-^MMT
-^PW406
-^LL0203
-^LS0
-^FT30,50^BQN,2,6
-^FH\\^FDLA,${qrText}^FS
-^FT30,170^A0N,20,20^FH\\^FD${name}^FS
-^FT30,195^A0N,15,15^FH\\^FD${school} - ${classroom}^FS
-^XZ`;
-  };
-
-  const generateTSPLLabel = (qrText: string, name: string, school: string, classroom: string): string => {
-    return `SIZE 50 mm, 25 mm
-GAP 2 mm, 0
-DIRECTION 1
-REFERENCE 0,0
-OFFSET 0 mm
-SET PEEL OFF
-SET CUTTER OFF
-SET PARTIAL_CUTTER OFF
-SET TEAR ON
-CLS
-QRCODE 20,20,L,5,A,0,"${qrText}"
-TEXT 20,130,"2",0,1,1,"${name}"
-TEXT 20,150,"1",0,1,1,"${school} - ${classroom}"
-PRINT 1,1`;
-  };
-
-  // =====================
-  // Printing Functions
-  // =====================
-  const printQR = async (): Promise<void> => {
-    if (!qrData) return;
-
-    if (!usbPrinter) {
-      await connectUSB();
-      if (!usbPrinter) return;
-    }
-
-    try {
-      setIsLoading(true);
-
-      let labelCommand = '';
-      
-      switch (printerProtocol) {
-        case 'ZPL':
-          labelCommand = generateZPLLabel(
-            qrData.qr_url, 
-            qrData.name, 
-            qrData.school, 
-            qrData.classroom
-          );
-          break;
-        case 'TSPL':
-          labelCommand = generateTSPLLabel(
-            qrData.qr_url, 
-            qrData.name, 
-            qrData.school, 
-            qrData.classroom
-          );
-          break;
-      }
-
-      console.log('Sending label command:', labelCommand);
-      
-      const encoder = new TextEncoder();
-      const data = encoder.encode(labelCommand);
-      
-      await usbPrinter.device.transferOut(usbPrinter.endpointOut, data);
-
-      setStatus({ type: 'success', message: 'Etiqueta QR impresa correctamente' });
-    } catch (error) {
-      setStatus({ type: 'error', message: 'Error al imprimir etiqueta QR' });
-      console.error('Print error:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const printMultipleStickers = async (quantity: number = 1): Promise<void> => {
-    if (quantity < 1 || quantity > 10) {
-      setStatus({ type: 'error', message: 'Cantidad debe estar entre 1 y 10' });
-      return;
-    }
-    
-    try {
-      for (let i = 0; i < quantity; i++) {
-        await printQR();
-        
-        if (i < quantity - 1) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      }
-      
-      setStatus({ type: 'success', message: `${quantity} etiqueta(s) impresa(s) exitosamente` });
-    } catch (error) {
-      setStatus({ type: 'error', message: 'Error al imprimir múltiples etiquetas' });
-      console.error('Multiple print error:', error);
-    }
-  };
-
-  const testPrinterConnection = async (): Promise<void> => {
-    if (!usbPrinter) {
-      setStatus({ type: 'error', message: 'No hay impresora conectada' });
-      return;
-    }
-    
-    try {
-      setIsLoading(true);
-      
-      let testCommand = '';
-      
-      switch (printerProtocol) {
-        case 'ZPL':
-          testCommand = '^XA^FO50,50^A0N,30,30^FDTEST PRINT OK^FS^XZ';
-          break;
-        case 'TSPL':
-          testCommand = 'SIZE 50 mm, 25 mm\nCLS\nTEXT 20,50,"3",0,1,1,"TEST PRINT OK"\nPRINT 1,1';
-          break;
-      }
-      
-      const encoder = new TextEncoder();
-      const data = encoder.encode(testCommand);
-      await usbPrinter.device.transferOut(usbPrinter.endpointOut, data);
-      
-      setStatus({ type: 'success', message: 'Prueba de impresora exitosa' });
-    } catch (error) {
-      setStatus({ type: 'error', message: 'Error en prueba de impresora' });
-      console.error('Test print error:', error);
     } finally {
       setIsLoading(false);
     }
@@ -1108,146 +926,49 @@ PRINT 1,1`;
                     <p className="text-sm text-gray-600">{qrData.school} - {qrData.classroom}</p>
                   </div>
 
-                  {/* Printer Protocol Selection */}
-                  <div className="bg-blue-50 p-4 rounded-lg">
-                    <h4 className="text-sm font-medium text-blue-800 mb-2">Configuración de Impresora</h4>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-blue-700">Protocolo:</span>
-                        <select
-                          value={printerProtocol}
-                          onChange={(e) => setPrinterProtocol(e.target.value as 'ZPL' | 'TSPL')}
-                          className="text-xs px-2 py-1 border border-blue-300 rounded"
-                        >
-                          <option value="ZPL">ZPL (Zebra)</option>
-                          <option value="TSPL">TSPL (TSC/Xprinter)</option>
-                        </select>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-blue-700">Estado USB:</span>
-                        <span className={`text-xs px-2 py-1 rounded ${
-                          usbPrinter ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {usbPrinter ? 'Conectada' : 'Desconectada'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
                   <div className="space-y-3">
-                    {/* NUEVA SECCIÓN: Botones RawBT */}
-                    <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
-                      <h4 className="text-sm font-medium text-orange-800 mb-3 flex items-center">
-                        <FileDown className="w-4 h-4 mr-2" />
-                        Imprimir con RawBT (Recomendado)
-                      </h4>
-                      
-                      {/* Botón principal TSPL */}
-                      <button
-                        onClick={handleDownloadTSPL}
-                        className="w-full bg-orange-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center mb-3"
-                      >
-                        <FileDown className="w-5 h-5 mr-2" />
-                        Descargar TSPL para RawBT
-                      </button>
-
-                      {/* Botones múltiples TSPL */}
-                      <div className="grid grid-cols-3 gap-2">
-                        <button
-                          onClick={() => downloadMultipleTSPLFile(qrData.qr_url, qrData.name, qrData.school, qrData.classroom, 2)}
-                          className="bg-orange-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
-                        >
-                          2x TSPL
-                        </button>
-                        <button
-                          onClick={() => downloadMultipleTSPLFile(qrData.qr_url, qrData.name, qrData.school, qrData.classroom, 3)}
-                          className="bg-orange-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
-                        >
-                          3x TSPL
-                        </button>
-                        <button
-                          onClick={() => downloadMultipleTSPLFile(qrData.qr_url, qrData.name, qrData.school, qrData.classroom, 5)}
-                          className="bg-orange-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
-                        >
-                          5x TSPL
-                        </button>
-                      </div>
-                      
-                      <p className="text-xs text-orange-700 mt-2 text-center">
-                        Descarga el archivo .tspl y ábrelo con RawBT en tu móvil
-                      </p>
-                    </div>
-
-                    {/* USB Connection Button */}
-                    {!usbPrinter && (
-                      <button
-                        onClick={connectUSB}
-                        disabled={isLoading}
-                        className="w-full bg-purple-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
-                      >
-                        {isLoading ? (
-                          <Loader className="w-5 h-5 animate-spin mr-2" />
-                        ) : (
-                          <Usb className="w-5 h-5 mr-2" />
-                        )}
-                        Conectar Impresora USB
-                      </button>
-                    )}
-
-                    {/* Test Print Button */}
-                    {usbPrinter && (
-                      <button
-                        onClick={testPrinterConnection}
-                        disabled={isLoading}
-                        className="w-full bg-yellow-600 text-white py-2 px-4 rounded-lg font-medium flex items-center justify-center"
-                      >
-                        {isLoading ? (
-                          <Loader className="w-4 h-4 animate-spin mr-2" />
-                        ) : (
-                          <Printer className="w-4 h-4 mr-2" />
-                        )}
-                        Prueba de Impresión USB
-                      </button>
-                    )}
-
-                    {/* Print Single QR Button */}
+                    {/* Botón principal para abrir RawBT */}
                     <button
-                      onClick={printQR}
-                      disabled={isLoading}
+                      onClick={() => handleOpenRawBT(1)}
                       className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
                     >
-                      {isLoading ? (
-                        <Loader className="w-5 h-5 animate-spin mr-2" />
-                      ) : (
-                        <Printer className="w-5 h-5 mr-2" />
-                      )}
-                      Imprimir USB Directo
+                      <FileDown className="w-5 h-5 mr-2" />
+                      Imprimir con RawBT (1 etiqueta)
                     </button>
 
-                    {/* Print Multiple QRs */}
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => printMultipleStickers(2)}
-                        disabled={isLoading}
-                        className="flex-1 bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
-                      >
-                        Imprimir 2x USB
-                      </button>
-                      <button
-                        onClick={() => printMultipleStickers(3)}
-                        disabled={isLoading}
-                        className="flex-1 bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
-                      >
-                        Imprimir 3x USB
-                      </button>
-                      <button
-                        onClick={() => printMultipleStickers(5)}
-                        disabled={isLoading}
-                        className="flex-1 bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
-                      >
-                        Imprimir 5x USB
-                      </button>
+                    {/* Botones para múltiples etiquetas */}
+                    <div className="bg-blue-50 p-3 rounded-lg">
+                      <h4 className="text-sm font-medium text-blue-800 mb-2">Imprimir múltiples etiquetas</h4>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          onClick={() => handleOpenRawBT(2)}
+                          className="bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
+                        >
+                          2 etiquetas
+                        </button>
+                        <button
+                          onClick={() => handleOpenRawBT(3)}
+                          className="bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
+                        >
+                          3 etiquetas
+                        </button>
+                        <button
+                          onClick={() => handleOpenRawBT(5)}
+                          className="bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
+                        >
+                          5 etiquetas
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Botón de descarga como fallback */}
+                    <button
+                      onClick={handleDownloadTSPLFallback}
+                      className="w-full bg-orange-600 text-white py-2 px-4 rounded-lg font-medium flex items-center justify-center text-sm"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Descargar archivo TSPL (alternativa)
+                    </button>
 
                     <button
                       onClick={downloadQR}
@@ -1263,6 +984,16 @@ PRINT 1,1`;
                     >
                       Crear Otro Activo
                     </button>
+                  </div>
+
+                  {/* Información sobre RawBT */}
+                  <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                    <p className="text-xs text-yellow-800 text-left">
+                      <strong>Instrucciones:</strong><br/>
+                      • Al hacer clic en "Imprimir con RawBT", se abrirá automáticamente la app RawBT<br/>
+                      • Si no se abre, descarga el archivo TSPL y ábrelo manualmente en RawBT<br/>
+                      • Asegúrate de tener RawBT instalado en tu dispositivo
+                    </p>
                   </div>
                 </div>
               )}
