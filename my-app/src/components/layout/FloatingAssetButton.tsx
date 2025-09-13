@@ -123,13 +123,6 @@ PRINT 1,1
 `;
   };
 
-  // Convertir string a hexadecimal
-  const stringToHex = (str: string): string => {
-    return Array.from(str)
-      .map(c => c.charCodeAt(0).toString(16).padStart(2, '0'))
-      .join('');
-  };
-
   // Abrir RawBT directamente con el archivo TSPL
   const openRawBTWithTSPL = (qrText: string, name: string, school: string, classroom: string, quantity: number = 1): void => {
     try {
@@ -159,23 +152,45 @@ PRINT 1,1
         }
       }
 
-      // Convertir a hexadecimal para RawBT
-      const hexContent = stringToHex(tsplContent);
-      const rawbtUri = `rawbt://printhex/${hexContent}`;
+      // Probar diferentes esquemas URI de RawBT
+      // Método 1: rawbt:// con base64
+      const base64Content = btoa(tsplContent);
+      const rawbtUri = `rawbt://${base64Content}`;
       
       // Intentar abrir RawBT directamente
       window.location.href = rawbtUri;
       
       setStatus({ 
         type: 'success', 
-        message: `Abriendo RawBT con ${quantity} etiqueta(s)...` 
+        message: `Enviando ${quantity} etiqueta(s) a RawBT...` 
       });
+      
+      // Fallback: También crear el archivo para descarga manual
+      setTimeout(() => {
+        const blob = new Blob([tsplContent], { type: 'text/plain' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `etiquetas_${quantity}x.tspl`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+        
+        setStatus({ 
+          type: 'success', 
+          message: 'Si RawBT no se abrió, se descargó el archivo TSPL. Ábrelo manualmente en RawBT.' 
+        });
+      }, 2000);
+
     } catch (error) {
       setStatus({ 
         type: 'error', 
-        message: 'Error al abrir RawBT. Asegúrate de que esté instalado.' 
+        message: 'Error al procesar archivo. Descargando archivo TSPL manual...' 
       });
       console.error('Error opening RawBT:', error);
+      
+      // Fallback: descargar archivo
+      handleDownloadTSPLFallback();
     }
   };
 
