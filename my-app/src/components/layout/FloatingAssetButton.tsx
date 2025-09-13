@@ -195,94 +195,13 @@ PRINT 1,1
   };
 
   // Función principal para abrir RawBT
-// Función mejorada para abrir RawBT de manera más confiable
-const handleOpenRawBT = async (quantity: number = 1): Promise<void> => {
-  if (!qrData) return;
-
-  try {
-    // Generar contenido TSPL mejorado
-    const tsplContent = generateImprovedTSPL(
-      qrData.qr_url,
-      qrData.name,
-      qrData.school,
-      qrData.classroom,
-      quantity
-    );
-
-    // Método 1: Intentar usar Web Share API (más confiable en Android)
-    if (navigator.share && navigator.canShare) {
-      const file = new File([tsplContent], "etiquetas.prn", { 
-        type: "text/plain" 
-      });
-      
-      const canShareFile = navigator.canShare({ files: [file] });
-      
-      if (canShareFile) {
-        await navigator.share({
-          files: [file],
-          title: "Etiquetas para imprimir",
-          text: `${quantity} etiqueta(s) - Abrir con RawBT`
-        });
-        
-        setStatus({ 
-          type: 'success', 
-          message: `Archivo enviado al menú compartir. Selecciona RawBT.` 
-        });
-        return;
-      }
-    }
-
-    // Método 2: Intentar intent:// para Android
-    const intentUrl = `intent://print/#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.data=${encodeURIComponent(tsplContent)};end`;
-    
-    // Crear un enlace temporal y hacer clic
-    const link = document.createElement('a');
-    link.href = intentUrl;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    setStatus({ 
-      type: 'success', 
-      message: `Intentando abrir RawBT directamente...` 
-    });
-    
-    // Fallback automático después de 3 segundos
-    setTimeout(() => {
-      downloadPRNFile(tsplContent, `etiquetas_${quantity}x`);
-      setStatus({ 
-        type: 'success', 
-        message: 'Si RawBT no se abrió, se descargó el archivo .prn como respaldo.' 
-      });
-    }, 3000);
-
-  } catch (error) {
-    console.error('Error opening RawBT:', error);
-    
-    // Fallback: descargar archivo
-    const tsplContent = generateImprovedTSPL(
-      qrData.qr_url,
-      qrData.name,
-      qrData.school,
-      qrData.classroom,
-      quantity
-    );
-    
-    downloadPRNFile(tsplContent, `etiquetas_${quantity}x`);
-    setStatus({ 
-      type: 'error', 
-      message: 'No se pudo abrir RawBT. Archivo descargado, ábrelo manualmente en RawBT.' 
-    });
-  }
-};
-
-// Generar TSPL mejorado con configuraciones adicionales
-const generateImprovedTSPL = (qrText: string, name: string, school: string, classroom: string, quantity: number = 1): string => {
+// Función corregida para generar TSPL que RawBT interprete correctamente
+const generateCorrectTSPL = (qrText: string, name: string, school: string, classroom: string, quantity: number = 1): string => {
+  // TSPL corregido con configuración específica para RawBT
   let tsplContent = `SIZE 50 mm, 25 mm
-GAP 2 mm, 0
-SPEED 4
-DENSITY 12
+GAP 2 mm, 0 mm
+SPEED 2
+DENSITY 8
 DIRECTION 1
 REFERENCE 0,0
 OFFSET 0 mm
@@ -290,60 +209,240 @@ SET PEEL OFF
 SET CUTTER OFF
 SET PARTIAL_CUTTER OFF
 SET TEAR ON
-CLS
+CODEPAGE 1252
 `;
 
-  // Generar múltiples etiquetas
+  // Generar etiquetas
   for (let i = 0; i < quantity; i++) {
-    tsplContent += `QRCODE 10,10,L,4,A,0,"${qrText}"
-TEXT 120,20,"2",0,1,1,"${name.substring(0, 18)}"
-TEXT 120,45,"1",0,1,1,"${school.substring(0, 15)}"
-TEXT 120,65,"1",0,1,1,"${classroom.substring(0, 15)}"
+    tsplContent += `CLS
+QRCODE 15,15,H,4,A,0,"${qrText}"
+TEXT 130,25,"3",0,1,1,"${name.substring(0, 16)}"
+TEXT 130,50,"2",0,1,1,"${school.substring(0, 18)}"
+TEXT 130,70,"2",0,1,1,"${classroom.substring(0, 18)}"
 PRINT 1,1
 `;
-    
-    if (i < quantity - 1) {
-      tsplContent += 'CLS\n';
-    }
   }
 
   return tsplContent;
 };
 
-// Descargar como archivo .prn (mejor compatibilidad que .tspl)
-const downloadPRNFile = (content: string, filename: string = 'etiqueta'): void => {
+// Función para abrir RawBT con método intent específico
+const handleOpenRawBTFixed = async (quantity: number = 1): Promise<void> => {
+  if (!qrData) return;
+
   try {
-    const blob = new Blob([content], { type: 'text/plain' });
+    const tsplContent = generateCorrectTSPL(
+      qrData.qr_url,
+      qrData.name,
+      qrData.school,
+      qrData.classroom,
+      quantity
+    );
+
+    // Método 1: Intent directo a RawBT
+    const intentData = encodeURIComponent(tsplContent);
+    const intentUrl = `intent://print#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.browser_fallback_url=https%3A//play.google.com/store/apps/details?id%3Dru.a402d.rawbtprinter;S.data=${intentData};end`;
+    
+    window.location.href = intentUrl;
+    
+    setStatus({ 
+      type: 'success', 
+      message: `Enviando ${quantity} etiqueta(s) a RawBT...` 
+    });
+
+    // Fallback después de 2 segundos
+    setTimeout(() => {
+      downloadCorrectPRN(tsplContent, `etiquetas_${quantity}x_${Date.now()}`);
+      setStatus({ 
+        type: 'success', 
+        message: 'Si RawBT no se abrió, descarga el archivo .prn y ábrelo manualmente.' 
+      });
+    }, 2000);
+
+  } catch (error) {
+    console.error('Error with RawBT:', error);
+    
+    const tsplContent = generateCorrectTSPL(
+      qrData.qr_url,
+      qrData.name,
+      qrData.school,
+      qrData.classroom,
+      quantity
+    );
+    
+    downloadCorrectPRN(tsplContent, `etiquetas_${quantity}x_${Date.now()}`);
+    setStatus({ 
+      type: 'error', 
+      message: 'Error al abrir RawBT. Archivo descargado para abrir manualmente.' 
+    });
+  }
+};
+
+// Descargar archivo con configuración correcta
+const downloadCorrectPRN = (content: string, filename: string): void => {
+  try {
+    // Usar Blob con encoding específico
+    const blob = new Blob([content], { 
+      type: 'text/plain;charset=utf-8'
+    });
+    
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = `${filename}.prn`;
+    
+    // Forzar descarga
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(link.href);
+    
+    console.log('PRN file downloaded:', filename);
   } catch (error) {
-    console.error('Error downloading PRN file:', error);
+    console.error('Error downloading PRN:', error);
   }
 };
 
-// Función alternativa para dispositivos que soportan only descarga
-const handleDownloadForRawBT = (quantity: number = 1): void => {
+// Función alternativa usando Web Share API mejorada
+const shareToRawBT = async (quantity: number = 1): Promise<void> => {
   if (!qrData) return;
-  
-  const tsplContent = generateImprovedTSPL(
+
+  try {
+    const tsplContent = generateCorrectTSPL(
+      qrData.qr_url,
+      qrData.name,
+      qrData.school,
+      qrData.classroom,
+      quantity
+    );
+
+    if (navigator.share) {
+      // Crear archivo con tipo MIME específico
+      const file = new File([tsplContent], "etiquetas.prn", {
+        type: "application/x-prn"
+      });
+
+      await navigator.share({
+        title: "Etiquetas para RawBT",
+        text: `${quantity} etiqueta(s) generadas`,
+        files: [file]
+      });
+
+      setStatus({
+        type: 'success',
+        message: 'Archivo compartido. Selecciona RawBT en el menú.'
+      });
+    } else {
+      // Fallback a descarga
+      downloadCorrectPRN(tsplContent, `etiquetas_${quantity}x_${Date.now()}`);
+    }
+  } catch (error) {
+    console.error('Error sharing to RawBT:', error);
+    setStatus({
+      type: 'error',
+      message: 'Error al compartir. Descargando archivo...'
+    });
+    
+    const tsplContent = generateCorrectTSPL(
+      qrData.qr_url,
+      qrData.name,
+      qrData.school,
+      qrData.classroom,
+      quantity
+    );
+    downloadCorrectPRN(tsplContent, `etiquetas_${quantity}x_${Date.now()}`);
+  }
+};
+
+// Función para abrir RawBT directamente (método URL scheme)
+const openRawBTDirect = (quantity: number = 1): void => {
+  if (!qrData) return;
+
+  const tsplContent = generateCorrectTSPL(
     qrData.qr_url,
     qrData.name,
     qrData.school,
     qrData.classroom,
     quantity
   );
+
+  // Método directo rawbt://
+  const base64Data = btoa(unescape(encodeURIComponent(tsplContent)));
+  const rawbtUrl = `rawbt://base64/${base64Data}`;
   
-  downloadPRNFile(tsplContent, `QR_${qrData.name}_${quantity}x_${Date.now()}`);
+  // Intentar abrir
+  window.location.href = rawbtUrl;
   
-  setStatus({ 
-    type: 'success', 
-    message: `Archivo .prn descargado con ${quantity} etiqueta(s). Ábrelo en RawBT para imprimir.` 
-  });
+  // Fallback automático
+  setTimeout(() => {
+    downloadCorrectPRN(tsplContent, `backup_${quantity}x_${Date.now()}`);
+  }, 1500);
+};
+
+// Función principal recomendada (combina todos los métodos)
+const printWithRawBT = async (quantity: number = 1): Promise<void> => {
+  if (!qrData) return;
+
+  try {
+    // Generar contenido una sola vez
+    const tsplContent = generateCorrectTSPL(
+      qrData.qr_url,
+      qrData.name,
+      qrData.school,
+      qrData.classroom,
+      quantity
+    );
+
+    // 1. Intentar Web Share API primero (más confiable)
+    if (navigator.share && 'canShare' in navigator) {
+      const file = new File([tsplContent], "etiquetas.prn", {
+        type: "text/plain"
+      });
+      
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: "Etiquetas RawBT"
+        });
+        
+        setStatus({
+          type: 'success',
+          message: 'Selecciona RawBT en el menú para imprimir'
+        });
+        return;
+      }
+    }
+
+    // 2. Fallback: Intent URL
+    const intentUrl = `intent://print#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.data=${encodeURIComponent(tsplContent)};end`;
+    window.location.href = intentUrl;
+    
+    // 3. Fallback final: Descarga
+    setTimeout(() => {
+      downloadCorrectPRN(tsplContent, `RawBT_${quantity}labels_${Date.now()}`);
+      setStatus({
+        type: 'success',
+        message: 'Si RawBT no se abrió, usa el archivo descargado'
+      });
+    }, 2000);
+
+  } catch (error) {
+    console.error('Error printing with RawBT:', error);
+    
+    // Último recurso: solo descargar
+    const tsplContent = generateCorrectTSPL(
+      qrData.qr_url,
+      qrData.name,
+      qrData.school,
+      qrData.classroom,
+      quantity
+    );
+    
+    downloadCorrectPRN(tsplContent, `ERROR_fallback_${quantity}x`);
+    setStatus({
+      type: 'error',
+      message: 'Error con RawBT. Archivo descargado como respaldo.'
+    });
+  }
 };
 
   // Descargar archivo TSPL como fallback
@@ -1090,7 +1189,7 @@ const handleDownloadForRawBT = (quantity: number = 1): void => {
                   <div className="space-y-3">
                     {/* Botón principal para abrir RawBT */}
                     <button
-                      onClick={() => handleOpenRawBT(1)}
+                      onClick={() => handleOpenRawBTFixed(1)}
                       className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
                     >
                       <FileDown className="w-5 h-5 mr-2" />
@@ -1102,19 +1201,19 @@ const handleDownloadForRawBT = (quantity: number = 1): void => {
                       <h4 className="text-sm font-medium text-blue-800 mb-2">Imprimir múltiples etiquetas</h4>
                       <div className="grid grid-cols-3 gap-2">
                         <button
-                          onClick={() => handleOpenRawBT(2)}
+                          onClick={() => handleOpenRawBTFixed(2)}
                           className="bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
                         >
                           2 etiquetas
                         </button>
                         <button
-                          onClick={() => handleOpenRawBT(3)}
+                          onClick={() => handleOpenRawBTFixed(3)}
                           className="bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
                         >
                           3 etiquetas
                         </button>
                         <button
-                          onClick={() => handleOpenRawBT(5)}
+                          onClick={() => handleOpenRawBTFixed(5)}
                           className="bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
                         >
                           5 etiquetas
