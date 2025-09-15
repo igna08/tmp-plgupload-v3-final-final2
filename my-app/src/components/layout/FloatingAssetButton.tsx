@@ -1302,3 +1302,4 @@ P1,1
     </>
   );
 }
+export default AssetCreatorFAB;
