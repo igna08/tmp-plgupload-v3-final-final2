@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Plus, X, Save, Download, Check, AlertCircle, Loader, FileDown, Printer } from 'lucide-react';
+import { Camera, Plus, X, Save, Download, Check, AlertCircle, Loader, FileDown, Printer, Wifi } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
+const RAWBT_SERVER_URL = 'http://192.168.100.101:9100'; // Server for RawBT local
 
 interface School {
   id: string;
@@ -70,6 +71,7 @@ interface StatusState {
 }
 
 type StepType = 'camera' | 'form' | 'qr';
+type PrinterLanguage = 'zpl' | 'tspl' | 'epl' | 'dpl';
 
 const AssetCreatorFAB: React.FC = () => {
   const { token } = useAuth();
@@ -85,6 +87,8 @@ const AssetCreatorFAB: React.FC = () => {
   const [selectedSchool, setSelectedSchool] = useState<string>('');
   const [qrData, setQrData] = useState<QRData | null>(null);
   const [status, setStatus] = useState<StatusState>({ type: '', message: '' });
+  const [printerLanguage, setPrinterLanguage] = useState<PrinterLanguage>('zpl');
+  const [serverConnected, setServerConnected] = useState<boolean>(false);
   const [formData, setFormData] = useState<FormData>({
     name: '',
     price: '',
@@ -100,219 +104,314 @@ const AssetCreatorFAB: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // =====================
-  // FUNCIONES RAWBT SIMPLIFICADAS
+  // FUNCIONES DE SERVIDOR RAWBT
   // =====================
 
-  // Generar contenido simple para RawBT
-  const generateSimpleContent = (qrUrl: string, name: string, school: string, classroom: string, quantity: number = 1): string => {
-    let content = '';
-    
-    // Para cada etiqueta, agregamos la información de forma simple
-    for (let i = 0; i < quantity; i++) {
-      content += `ETIQUETA ${i + 1}/${quantity}\n`;
-      content += `QR: ${qrUrl}\n`;
-      content += `NOMBRE: ${name.substring(0, 20)}\n`;
-      content += `ESCUELA: ${school.substring(0, 20)}\n`;
-      content += `AULA: ${classroom.substring(0, 20)}\n`;
-      content += `FECHA: ${new Date().toLocaleDateString()}\n`;
-      content += `\n--- CORTAR AQUI ---\n\n`;
+  // Verificar conexión con el servidor RawBT
+  const checkRawBTServer = async (): Promise<boolean> => {
+    try {
+      const response = await fetch(RAWBT_SERVER_URL, {
+        method: 'GET',
+        signal: AbortSignal.timeout(3000) // Timeout de 3 segundos
+      });
+      return response.ok || response.status === 405; // 405 es normal para GET en el servidor
+    } catch (error) {
+      console.error('RawBT Server not available:', error);
+      return false;
     }
-    
-    return content;
   };
 
-  // Función de prueba para RawBT
-  const testRawBTPrint = (): void => {
-    try {
-      // Contenido de prueba simple
-      const testContent = `PRUEBA DE IMPRESION RAWBT
-      
-NOMBRE: Escritorio de Prueba
-ESCUELA: Escuela Test
-AULA: Aula 101
-CODIGO QR: https://example.com/qr/test123
-FECHA: ${new Date().toLocaleDateString()}
+  // Función para truncar texto y asegurar que sea seguro para imprimir
+  const sanitizeText = (text: string, maxLength: number): string => {
+    return text
+      .substring(0, maxLength)
+      .replace(/[^\x20-\x7E]/g, '?') // Reemplazar caracteres no ASCII
+      .replace(/[\\]/g, '/'); // Reemplazar backslashes
+  };
 
---- Esta es una prueba ---
-Si ves este texto, RawBT funciona correctamente.
+  // Generar comando ZPL para etiqueta 5cm x 2.5cm (200x100 dots a 203 DPI)
+  const generateZPLLabel = (qrUrl: string, name: string, school: string, classroom: string, language?: string): string => {
+    const safeName = sanitizeText(name, 20);
+    const safeSchool = sanitizeText(school, 18);
+    const safeClassroom = sanitizeText(classroom, 15);
+    const safeQRUrl = qrUrl.substring(0, 150); // Limitar URL del QR
+    const date = new Date().toLocaleDateString('es-ES', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: '2-digit' 
+    });
 
+    return `^XA
+^MMT
+^PW200
+^LL100
+^LS0
+^CI28
+
+^FO10,10^BQN,2,3^FDQA,${safeQRUrl}^FS
+
+^FO80,10^A0N,12,12^FD${safeName}^FS
+^FO80,25^A0N,10,10^FD${safeSchool}^FS
+^FO80,38^A0N,10,10^FD${safeClassroom}^FS
+^FO80,52^A0N,8,8^FD${date}^FS
+
+^FO10,70^GB180,1,1^FS
+
+^FO10,75^A0N,8,8^FDQR: ${safeQRUrl.substring(0, 25)}...^FS
+
+^XZ`;
+  };
+
+  // Generar comando TSPL para etiqueta 5cm x 2.5cm
+  const generateTSPLLabel = (qrUrl: string, name: string, school: string, classroom: string): string => {
+    const safeName = sanitizeText(name, 20);
+    const safeSchool = sanitizeText(school, 18);
+    const safeClassroom = sanitizeText(classroom, 15);
+    const safeQRUrl = qrUrl.substring(0, 150);
+    const date = new Date().toLocaleDateString('es-ES', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: '2-digit' 
+    });
+
+    return `SIZE 50 mm, 25 mm
+GAP 2 mm, 0 mm
+DIRECTION 1
+REFERENCE 0, 0
+OFFSET 0 mm
+SET PEEL OFF
+SET CUTTER OFF
+SET PARTIAL_CUTTER OFF
+SET TEAR ON
+CLEAR
+
+QRCODE 10, 10, H, 3, A, 0, "${safeQRUrl}"
+
+TEXT 80, 10, "3", 0, 1, 1, "${safeName}"
+TEXT 80, 25, "2", 0, 1, 1, "${safeSchool}"
+TEXT 80, 38, "2", 0, 1, 1, "${safeClassroom}"
+TEXT 80, 52, "1", 0, 1, 1, "${date}"
+
+BAR 10, 70, 180, 1
+
+TEXT 10, 75, "1", 0, 1, 1, "QR: ${safeQRUrl.substring(0, 25)}..."
+
+PRINT 1, 1
 `;
+  };
 
-      // Método 1: Intent con texto simple
-      const intentUrl = `intent://print#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.text=${encodeURIComponent(testContent)};end`;
-      window.location.href = intentUrl;
-      
-      setStatus({ 
-        type: 'success', 
-        message: 'Enviando prueba a RawBT...' 
-      });
+  // Generar comando EPL para etiqueta 5cm x 2.5cm
+  const generateEPLLabel = (qrUrl: string, name: string, school: string, classroom: string): string => {
+    const safeName = sanitizeText(name, 18);
+    const safeSchool = sanitizeText(school, 16);
+    const safeClassroom = sanitizeText(classroom, 14);
+    const date = new Date().toLocaleDateString('es-ES', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: '2-digit' 
+    });
 
-      // Fallback: descargar archivo
-      setTimeout(() => {
-        const blob = new Blob([testContent], { type: 'text/plain' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `prueba_rawbt_${Date.now()}.txt`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(link.href);
-        
-        setStatus({ 
-          type: 'success', 
-          message: 'Si RawBT no se abrió, se descargó archivo de prueba' 
-        });
-      }, 2000);
+    return `N
+q200
+Q100,25
+S4
 
-    } catch (error) {
-      setStatus({ 
-        type: 'error', 
-        message: 'Error en prueba de RawBT' 
-      });
-      console.error('Error testing RawBT:', error);
+b10,10,Q,3,3,0,0,"${qrUrl}"
+
+A80,10,0,2,1,1,N,"${safeName}"
+A80,25,0,1,1,1,N,"${safeSchool}"
+A80,38,0,1,1,1,N,"${safeClassroom}"
+A80,52,0,1,1,1,N,"${date}"
+
+LO10,70,180,1
+
+A10,75,0,1,1,1,N,"QR: ${qrUrl.substring(0, 20)}..."
+
+P1,1
+`;
+  };
+
+  // Generar comando DPL para etiqueta 5cm x 2.5cm
+  const generateDPLLabel = (qrUrl: string, name: string, school: string, classroom: string): string => {
+    const safeName = sanitizeText(name, 18);
+    const safeSchool = sanitizeText(school, 16);
+    const safeClassroom = sanitizeText(classroom, 14);
+    const date = new Date().toLocaleDateString('es-ES', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: '2-digit' 
+    });
+
+    return `<STX><SI>T<SI>
+<STX>KI504<ETX>
+<STX>O0220<ETX>
+<STX>f220<ETX>
+<STX>KI7<ETX>
+<STX>V0<ETX>
+<STX>L1010<ETX>
+<STX>H05<ETX>
+<STX>PC<ETX>
+<STX>PD<ETX>
+
+<STX>B1010034Q${qrUrl}<ETX>
+
+<STX>A1808002000${safeName}<ETX>
+<STX>A1825001600${safeSchool}<ETX>
+<STX>A1838001600${safeClassroom}<ETX>
+<STX>A1852001200${date}<ETX>
+
+<STX>A1075001200QR: ${qrUrl.substring(0, 20)}...<ETX>
+
+<STX>Q0001<ETX>
+<STX>E<ETX>
+`;
+  };
+
+  // Generar etiqueta según el lenguaje seleccionado
+  const generateLabel = (qrUrl: string, name: string, school: string, classroom: string, language: PrinterLanguage): string => {
+    switch (language) {
+      case 'zpl':
+        return generateZPLLabel(qrUrl, name, school, classroom, language);
+      case 'tspl':
+        return generateTSPLLabel(qrUrl, name, school, classroom);
+      case 'epl':
+        return generateEPLLabel(qrUrl, name, school, classroom);
+      case 'dpl':
+        return generateDPLLabel(qrUrl, name, school, classroom);
+      default:
+        return generateZPLLabel(qrUrl, name, school, classroom);
     }
   };
 
-  // Función principal para imprimir con RawBT (método simplificado)
-  const printWithRawBTSimple = async (quantity: number = 1): Promise<void> => {
-    if (!qrData) return;
-
+  // Enviar etiqueta al servidor RawBT
+  const sendToRawBTServer = async (labelContent: string, quantity: number = 1): Promise<void> => {
     try {
-      // Generar contenido simple
-      const simpleContent = generateSimpleContent(
-        qrData.qr_url,
-        qrData.name,
-        qrData.school,
-        qrData.classroom,
-        quantity
-      );
-
-      // Método 1: Intent con parámetro de texto
-      const intentUrl = `intent://print#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.text=${encodeURIComponent(simpleContent)};end`;
-      window.location.href = intentUrl;
+      setIsLoading(true);
       
-      setStatus({
-        type: 'success',
-        message: `Enviando ${quantity} etiqueta(s) a RawBT...`
-      });
-
-      // Fallback automático
-      setTimeout(() => {
-        downloadTextFile(simpleContent, `etiquetas_${quantity}x_${Date.now()}.txt`);
-        setStatus({
-          type: 'success',
-          message: 'Si RawBT no se abrió, archivo descargado como respaldo'
-        });
-      }, 2500);
-
-    } catch (error) {
-      console.error('Error with RawBT simple:', error);
-      
-      const simpleContent = generateSimpleContent(
-        qrData.qr_url,
-        qrData.name,
-        qrData.school,
-        qrData.classroom,
-        quantity
-      );
-      
-      downloadTextFile(simpleContent, `error_${quantity}x_${Date.now()}.txt`);
-      setStatus({
-        type: 'error',
-        message: 'Error con RawBT. Archivo descargado como respaldo.'
-      });
-    }
-  };
-
-  // Función alternativa usando Web Share API
-  const shareToRawBT = async (quantity: number = 1): Promise<void> => {
-    if (!qrData) return;
-
-    try {
-      const content = generateSimpleContent(
-        qrData.qr_url,
-        qrData.name,
-        qrData.school,
-        qrData.classroom,
-        quantity
-      );
-
-      if (navigator.share && 'canShare' in navigator) {
-        const file = new File([content], "etiquetas_rawbt.txt", {
-          type: "text/plain"
-        });
-
-        if (navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            files: [file],
-            title: "Etiquetas para RawBT",
-            text: `${quantity} etiqueta(s) para imprimir`
-          });
-
-          setStatus({
-            type: 'success',
-            message: 'Archivo compartido. Selecciona RawBT en el menú.'
-          });
-          return;
-        }
+      // Verificar si el servidor está disponible
+      const serverAvailable = await checkRawBTServer();
+      if (!serverAvailable) {
+        throw new Error('Servidor RawBT no disponible');
       }
 
-      // Fallback si no hay Web Share
-      printWithRawBTSimple(quantity);
+      // Generar múltiples etiquetas si es necesario
+      let finalContent = '';
+      for (let i = 0; i < quantity; i++) {
+        finalContent += labelContent + '\n\n';
+      }
 
-    } catch (error) {
-      console.error('Error sharing to RawBT:', error);
-      printWithRawBTSimple(quantity);
-    }
-  };
-
-  // Función para abrir RawBT con URL scheme directo
-  const openRawBTDirect = (quantity: number = 1): void => {
-    if (!qrData) return;
-
-    try {
-      // Crear mensaje simple con URL del QR
-      const message = `${qrData.name}\n${qrData.school} - ${qrData.classroom}\nQR: ${qrData.qr_url}`;
-      
-      // URL scheme directo de RawBT
-      const rawbtUrl = `rawbt://text?data=${encodeURIComponent(message)}`;
-      window.location.href = rawbtUrl;
-      
-      setStatus({
-        type: 'success',
-        message: 'Abriendo RawBT...'
+      const response = await fetch(RAWBT_SERVER_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain',
+          'Accept': '*/*'
+        },
+        body: finalContent
       });
 
-      // Fallback después de 1.5 segundos
-      setTimeout(() => {
-        const content = generateSimpleContent(qrData.qr_url, qrData.name, qrData.school, qrData.classroom, quantity);
-        downloadTextFile(content, `rawbt_backup_${quantity}x.txt`);
-      }, 1500);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      setStatus({
+        type: 'success',
+        message: `${quantity} etiqueta(s) enviada(s) a RawBT correctamente`
+      });
+      setServerConnected(true);
 
     } catch (error) {
-      console.error('Error opening RawBT direct:', error);
-      printWithRawBTSimple(quantity);
-    }
-  };
-
-  // Descargar archivo de texto simple
-  const downloadTextFile = (content: string, filename: string): void => {
-    try {
-      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      console.error('Error sending to RawBT server:', error);
+      
+      // Fallback: descargar archivo
+      const blob = new Blob([labelContent], { type: 'text/plain' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = filename;
+      link.download = `etiqueta_${printerLanguage}_${quantity}x_${Date.now()}.txt`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(link.href);
+      
+      setStatus({
+        type: 'error',
+        message: 'Error con servidor RawBT. Archivo descargado como respaldo.'
+      });
+      setServerConnected(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Imprimir etiquetas usando RawBT Server
+  const printWithRawBTServer = async (quantity: number = 1): Promise<void> => {
+    if (!qrData) return;
+
+    const labelContent = generateLabel(
+      qrData.qr_url,
+      qrData.name,
+      qrData.school,
+      qrData.classroom,
+      printerLanguage
+    );
+
+    await sendToRawBTServer(labelContent, quantity);
+  };
+
+  // Probar conexión y imprimir etiqueta de prueba
+  const testRawBTConnection = async (): Promise<void> => {
+    try {
+      setIsLoading(true);
+      
+      const serverAvailable = await checkRawBTServer();
+      if (!serverAvailable) {
+        setStatus({
+          type: 'error',
+          message: 'Servidor RawBT no disponible en 127.0.0.1:8080'
+        });
+        return;
+      }
+
+      // Generar etiqueta de prueba
+      const testLabel = generateLabel(
+        'https://example.com/qr/test123',
+        'PRUEBA IMPRESION',
+        'Escuela Test',
+        'Aula 101',
+        printerLanguage
+      );
+
+      const response = await fetch(RAWBT_SERVER_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain',
+        },
+        body: testLabel
+      });
+
+      if (response.ok) {
+        setStatus({
+          type: 'success',
+          message: `Prueba ${printerLanguage.toUpperCase()} enviada correctamente a RawBT`
+        });
+        setServerConnected(true);
+      } else {
+        throw new Error(`Error HTTP: ${response.status}`);
+      }
+
     } catch (error) {
-      console.error('Error downloading file:', error);
+      console.error('Test connection error:', error);
+      setStatus({
+        type: 'error',
+        message: 'Error de conexión con servidor RawBT'
+      });
+      setServerConnected(false);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   // =====================
-  // FUNCIONES ORIGINALES
+  // FUNCIONES ORIGINALES (sin cambios)
   // =====================
 
   useEffect(() => {
@@ -334,6 +433,13 @@ Si ves este texto, RawBT funciona correctamente.
       cleanupCamera();
     };
   }, []);
+
+  // Verificar servidor al expandir
+  useEffect(() => {
+    if (isExpanded) {
+      checkRawBTServer().then(setServerConnected);
+    }
+  }, [isExpanded]);
 
   const cleanupCamera = (): void => {
     if (cameraStream) {
@@ -743,12 +849,23 @@ Si ves este texto, RawBT funciona correctamente.
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-xl font-semibold text-gray-800">Crear Activo</h2>
-              <button
-                onClick={handleClose}
-                className="p-2 hover:bg-gray-100 rounded-full"
-              >
-                <X className="w-6 h-6" />
-              </button>
+              <div className="flex items-center space-x-2">
+                {/* Indicador de conexión RawBT */}
+                <div className={`flex items-center px-2 py-1 rounded-full text-xs ${
+                  serverConnected 
+                    ? 'bg-green-100 text-green-800' 
+                    : 'bg-red-100 text-red-800'
+                }`}>
+                  <Wifi className={`w-3 h-3 mr-1 ${serverConnected ? 'text-green-600' : 'text-red-600'}`} />
+                  {serverConnected ? 'Conectado' : 'Desconectado'}
+                </div>
+                <button
+                  onClick={handleClose}
+                  className="p-2 hover:bg-gray-100 rounded-full"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
             </div>
 
             <div className="p-4 max-h-[70vh] overflow-y-auto">
@@ -792,17 +909,55 @@ Si ves este texto, RawBT funciona correctamente.
                     )}
                   </div>
 
-                  {/* Botón de prueba RawBT */}
-                  <div className="pt-4 border-t">
-                    <button
-                      onClick={testRawBTPrint}
-                      className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium flex items-center justify-center text-sm"
-                    >
+                  {/* Configuración de impresora */}
+                  <div className="bg-blue-50 p-4 rounded-lg border">
+                    <h4 className="text-sm font-medium text-blue-800 mb-3 flex items-center">
                       <Printer className="w-4 h-4 mr-2" />
-                      Probar RawBT (Impresión de prueba)
+                      Configuración de Impresora
+                    </h4>
+                    
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-blue-700 mb-1">
+                          Lenguaje de Impresora:
+                        </label>
+                        <select
+                          value={printerLanguage}
+                          onChange={(e) => setPrinterLanguage(e.target.value as PrinterLanguage)}
+                          className="w-full px-2 py-1 text-sm border border-blue-300 rounded focus:ring-1 focus:ring-blue-500"
+                        >
+                          <option value="zpl">ZPL (Zebra)</option>
+                          <option value="tspl">TSPL (TSC)</option>
+                          <option value="epl">EPL (Eltron)</option>
+                          <option value="dpl">DPL (Datamax)</option>
+                        </select>
+                      </div>
+                      
+                      <div className="text-xs text-blue-600">
+                        • Etiqueta: 5cm × 2.5cm (200×100 puntos)
+                        • Servidor: 127.0.0.1:8080
+                        • Compatible con RawBT Server
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Botones de prueba */}
+                  <div className="space-y-2">
+                    <button
+                      onClick={testRawBTConnection}
+                      disabled={isLoading}
+                      className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium flex items-center justify-center text-sm disabled:opacity-50"
+                    >
+                      {isLoading ? (
+                        <Loader className="w-4 h-4 animate-spin mr-2" />
+                      ) : (
+                        <Wifi className="w-4 h-4 mr-2" />
+                      )}
+                      Probar Conexión RawBT ({printerLanguage.toUpperCase()})
                     </button>
-                    <p className="text-xs text-gray-500 mt-1 text-center">
-                      Usar para verificar que RawBT funcione correctamente
+                    
+                    <p className="text-xs text-gray-500 text-center">
+                      Asegúrate de tener RawBT Server ejecutándose en puerto 8080
                     </p>
                   </div>
                 </div>
@@ -820,6 +975,7 @@ Si ves este texto, RawBT funciona correctamente.
                       />
                     </div>
                   )}
+                  
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Nombre del objeto *
@@ -830,8 +986,11 @@ Si ves este texto, RawBT funciona correctamente.
                       onChange={(e) => handleInputChange('name', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
                       placeholder="Ingrese el nombre"
+                      maxLength={20}
                     />
+                    <p className="text-xs text-gray-500 mt-1">Máximo 20 caracteres para impresión</p>
                   </div>
+                  
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Precio estimado
@@ -848,11 +1007,12 @@ Si ves este texto, RawBT funciona correctamente.
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Cantidad
+                      Cantidad de etiquetas
                     </label>
                     <input
                       type="number"
                       min="1"
+                      max="10"
                       value={formData.quantity}
                       onChange={(e) => handleInputChange('quantity', parseInt(e.target.value) || 1)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
@@ -1028,50 +1188,85 @@ Si ves este texto, RawBT funciona correctamente.
                     <p className="text-sm text-gray-600">{qrData.school} - {qrData.classroom}</p>
                   </div>
 
+                  {/* Configuración actual */}
+                  <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                    <div className="text-xs text-blue-800">
+                      <strong>Configuración actual:</strong><br/>
+                      • Lenguaje: {printerLanguage.toUpperCase()}<br/>
+                      • Tamaño: 5cm × 2.5cm<br/>
+                      • Servidor: {serverConnected ? '✅ Conectado' : '❌ Desconectado'}
+                    </div>
+                  </div>
+
                   <div className="space-y-3">
-                    {/* Botón principal para abrir RawBT */}
+                    {/* Botón principal de impresión */}
                     <button
-                      onClick={() => printWithRawBTSimple(1)}
-                      className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
+                      onClick={() => printWithRawBTServer(formData.quantity)}
+                      disabled={isLoading}
+                      className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center disabled:opacity-50"
                     >
-                      <FileDown className="w-5 h-5 mr-2" />
-                      Imprimir con RawBT (1 etiqueta)
+                      {isLoading ? (
+                        <Loader className="w-5 h-5 animate-spin mr-2" />
+                      ) : (
+                        <Printer className="w-5 h-5 mr-2" />
+                      )}
+                      Imprimir {formData.quantity} Etiqueta(s) ({printerLanguage.toUpperCase()})
                     </button>
 
-                    {/* Botones para múltiples etiquetas */}
-                    <div className="bg-blue-50 p-3 rounded-lg">
-                      <h4 className="text-sm font-medium text-blue-800 mb-2">Imprimir múltiples etiquetas</h4>
-                      <div className="grid grid-cols-3 gap-2">
-                        <button
-                          onClick={() => printWithRawBTSimple(2)}
-                          className="bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
-                        >
-                          2 etiquetas
-                        </button>
-                        <button
-                          onClick={() => printWithRawBTSimple(3)}
-                          className="bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
-                        >
-                          3 etiquetas
-                        </button>
-                        <button
-                          onClick={() => printWithRawBTSimple(5)}
-                          className="bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium"
-                        >
-                          5 etiquetas
-                        </button>
+                    {/* Botones para cantidades específicas */}
+                    {formData.quantity === 1 && (
+                      <div className="bg-blue-50 p-3 rounded-lg">
+                        <h4 className="text-sm font-medium text-blue-800 mb-2">Imprimir múltiples etiquetas</h4>
+                        <div className="grid grid-cols-3 gap-2">
+                          <button
+                            onClick={() => printWithRawBTServer(2)}
+                            disabled={isLoading}
+                            className="bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium disabled:opacity-50"
+                          >
+                            2 etiquetas
+                          </button>
+                          <button
+                            onClick={() => printWithRawBTServer(3)}
+                            disabled={isLoading}
+                            className="bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium disabled:opacity-50"
+                          >
+                            3 etiquetas
+                          </button>
+                          <button
+                            onClick={() => printWithRawBTServer(5)}
+                            disabled={isLoading}
+                            className="bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium disabled:opacity-50"
+                          >
+                            5 etiquetas
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Botón para cambiar lenguaje de impresora */}
+                    <div className="bg-orange-50 p-3 rounded-lg">
+                      <h4 className="text-sm font-medium text-orange-800 mb-2">Cambiar formato</h4>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['zpl', 'tspl', 'epl', 'dpl'] as PrinterLanguage[]).map((lang) => (
+                          <button
+                            key={lang}
+                            onClick={() => {
+                              setPrinterLanguage(lang);
+                              setStatus({ type: 'success', message: `Cambiado a ${lang.toUpperCase()}` });
+                            }}
+                            className={`py-2 px-3 rounded-lg text-sm font-medium ${
+                              printerLanguage === lang
+                                ? 'bg-orange-600 text-white'
+                                : 'bg-orange-200 text-orange-800 hover:bg-orange-300'
+                            }`}
+                          >
+                            {lang.toUpperCase()}
+                          </button>
+                        ))}
                       </div>
                     </div>
 
                     {/* Botón de descarga como fallback */}
-                    <button
-                      onClick={downloadQR}
-                      className="w-full bg-orange-600 text-white py-2 px-4 rounded-lg font-medium flex items-center justify-center text-sm"
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      Descargar archivo TSPL (alternativa)
-                    </button>
-
                     <button
                       onClick={downloadQR}
                       className="w-full bg-gray-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
@@ -1088,13 +1283,14 @@ Si ves este texto, RawBT funciona correctamente.
                     </button>
                   </div>
 
-                  {/* Información sobre RawBT */}
+                  {/* Información sobre RawBT Server */}
                   <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
                     <p className="text-xs text-yellow-800 text-left">
-                      <strong>Instrucciones:</strong><br/>
-                      • Al hacer clic en "Imprimir con RawBT", se abrirá automáticamente la app RawBT<br/>
-                      • Si no se abre, descarga el archivo TSPL y ábrelo manualmente en RawBT<br/>
-                      • Asegúrate de tener RawBT instalado en tu dispositivo
+                      <strong>Instrucciones RawBT Server:</strong><br/>
+                      • Ejecuta RawBT Server en tu dispositivo<br/>
+                      • Configurar puerto 8080 en modo RAW<br/>
+                      • Conecta la impresora vía OTG/USB<br/>
+                      • Si falla, descarga archivo y ábrelo en RawBT manualmente
                     </p>
                   </div>
                 </div>
@@ -1105,6 +1301,4 @@ Si ves este texto, RawBT funciona correctamente.
       )}
     </>
   );
-};
-
-export default AssetCreatorFAB;
+}
