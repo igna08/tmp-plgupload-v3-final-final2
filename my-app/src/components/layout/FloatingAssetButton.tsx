@@ -1,11 +1,10 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Plus, X, Save, Download, Check, AlertCircle, Loader, FileDown, Printer, Wifi } from 'lucide-react';
+import { Camera, Plus, X, Save, Printer, Download, Check, AlertCircle, Loader } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
-const RAWBT_SERVER_URL = 'http://192.168.100.101:9100'; // Server for RawBT local
 
 interface School {
   id: string;
@@ -70,11 +69,15 @@ interface StatusState {
   message: string;
 }
 
+interface BluetoothPrinter {
+  device: BluetoothDevice;
+  characteristic: BluetoothRemoteGATTCharacteristic;
+}
+
 type StepType = 'camera' | 'form' | 'qr';
-type PrinterLanguage = 'zpl' | 'tspl' | 'epl' | 'dpl';
 
 const AssetCreatorFAB: React.FC = () => {
-  const { token } = useAuth();
+  const { token } = useAuth(); // Get token from auth context
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [currentStep, setCurrentStep] = useState<StepType>('camera');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -85,10 +88,9 @@ const AssetCreatorFAB: React.FC = () => {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [selectedSchool, setSelectedSchool] = useState<string>('');
+  const [bluetoothPrinter, setBluetoothPrinter] = useState<BluetoothPrinter | null>(null);
   const [qrData, setQrData] = useState<QRData | null>(null);
   const [status, setStatus] = useState<StatusState>({ type: '', message: '' });
-  const [printerLanguage, setPrinterLanguage] = useState<PrinterLanguage>('zpl');
-  const [serverConnected, setServerConnected] = useState<boolean>(false);
   const [formData, setFormData] = useState<FormData>({
     name: '',
     price: '',
@@ -103,317 +105,7 @@ const AssetCreatorFAB: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // =====================
-  // FUNCIONES DE SERVIDOR RAWBT
-  // =====================
-
-  // Verificar conexión con el servidor RawBT
-  const checkRawBTServer = async (): Promise<boolean> => {
-    try {
-      const response = await fetch(RAWBT_SERVER_URL, {
-        method: 'GET',
-        signal: AbortSignal.timeout(3000) // Timeout de 3 segundos
-      });
-      return response.ok || response.status === 405; // 405 es normal para GET en el servidor
-    } catch (error) {
-      console.error('RawBT Server not available:', error);
-      return false;
-    }
-  };
-
-  // Función para truncar texto y asegurar que sea seguro para imprimir
-  const sanitizeText = (text: string, maxLength: number): string => {
-    return text
-      .substring(0, maxLength)
-      .replace(/[^\x20-\x7E]/g, '?') // Reemplazar caracteres no ASCII
-      .replace(/[\\]/g, '/'); // Reemplazar backslashes
-  };
-
-  // Generar comando ZPL para etiqueta 5cm x 2.5cm (200x100 dots a 203 DPI)
-  const generateZPLLabel = (qrUrl: string, name: string, school: string, classroom: string, language?: string): string => {
-    const safeName = sanitizeText(name, 20);
-    const safeSchool = sanitizeText(school, 18);
-    const safeClassroom = sanitizeText(classroom, 15);
-    const safeQRUrl = qrUrl.substring(0, 150); // Limitar URL del QR
-    const date = new Date().toLocaleDateString('es-ES', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: '2-digit' 
-    });
-
-    return `^XA
-^MMT
-^PW200
-^LL100
-^LS0
-^CI28
-
-^FO10,10^BQN,2,3^FDQA,${safeQRUrl}^FS
-
-^FO80,10^A0N,12,12^FD${safeName}^FS
-^FO80,25^A0N,10,10^FD${safeSchool}^FS
-^FO80,38^A0N,10,10^FD${safeClassroom}^FS
-^FO80,52^A0N,8,8^FD${date}^FS
-
-^FO10,70^GB180,1,1^FS
-
-^FO10,75^A0N,8,8^FDQR: ${safeQRUrl.substring(0, 25)}...^FS
-
-^XZ`;
-  };
-
-  // Generar comando TSPL para etiqueta 5cm x 2.5cm
-  const generateTSPLLabel = (qrUrl: string, name: string, school: string, classroom: string): string => {
-    const safeName = sanitizeText(name, 20);
-    const safeSchool = sanitizeText(school, 18);
-    const safeClassroom = sanitizeText(classroom, 15);
-    const safeQRUrl = qrUrl.substring(0, 150);
-    const date = new Date().toLocaleDateString('es-ES', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: '2-digit' 
-    });
-
-    return `SIZE 50 mm, 25 mm
-GAP 2 mm, 0 mm
-DIRECTION 1
-REFERENCE 0, 0
-OFFSET 0 mm
-SET PEEL OFF
-SET CUTTER OFF
-SET PARTIAL_CUTTER OFF
-SET TEAR ON
-CLEAR
-
-QRCODE 10, 10, H, 3, A, 0, "${safeQRUrl}"
-
-TEXT 80, 10, "3", 0, 1, 1, "${safeName}"
-TEXT 80, 25, "2", 0, 1, 1, "${safeSchool}"
-TEXT 80, 38, "2", 0, 1, 1, "${safeClassroom}"
-TEXT 80, 52, "1", 0, 1, 1, "${date}"
-
-BAR 10, 70, 180, 1
-
-TEXT 10, 75, "1", 0, 1, 1, "QR: ${safeQRUrl.substring(0, 25)}..."
-
-PRINT 1, 1
-`;
-  };
-
-  // Generar comando EPL para etiqueta 5cm x 2.5cm
-  const generateEPLLabel = (qrUrl: string, name: string, school: string, classroom: string): string => {
-    const safeName = sanitizeText(name, 18);
-    const safeSchool = sanitizeText(school, 16);
-    const safeClassroom = sanitizeText(classroom, 14);
-    const date = new Date().toLocaleDateString('es-ES', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: '2-digit' 
-    });
-
-    return `N
-q200
-Q100,25
-S4
-
-b10,10,Q,3,3,0,0,"${qrUrl}"
-
-A80,10,0,2,1,1,N,"${safeName}"
-A80,25,0,1,1,1,N,"${safeSchool}"
-A80,38,0,1,1,1,N,"${safeClassroom}"
-A80,52,0,1,1,1,N,"${date}"
-
-LO10,70,180,1
-
-A10,75,0,1,1,1,N,"QR: ${qrUrl.substring(0, 20)}..."
-
-P1,1
-`;
-  };
-
-  // Generar comando DPL para etiqueta 5cm x 2.5cm
-  const generateDPLLabel = (qrUrl: string, name: string, school: string, classroom: string): string => {
-    const safeName = sanitizeText(name, 18);
-    const safeSchool = sanitizeText(school, 16);
-    const safeClassroom = sanitizeText(classroom, 14);
-    const date = new Date().toLocaleDateString('es-ES', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: '2-digit' 
-    });
-
-    return `<STX><SI>T<SI>
-<STX>KI504<ETX>
-<STX>O0220<ETX>
-<STX>f220<ETX>
-<STX>KI7<ETX>
-<STX>V0<ETX>
-<STX>L1010<ETX>
-<STX>H05<ETX>
-<STX>PC<ETX>
-<STX>PD<ETX>
-
-<STX>B1010034Q${qrUrl}<ETX>
-
-<STX>A1808002000${safeName}<ETX>
-<STX>A1825001600${safeSchool}<ETX>
-<STX>A1838001600${safeClassroom}<ETX>
-<STX>A1852001200${date}<ETX>
-
-<STX>A1075001200QR: ${qrUrl.substring(0, 20)}...<ETX>
-
-<STX>Q0001<ETX>
-<STX>E<ETX>
-`;
-  };
-
-  // Generar etiqueta según el lenguaje seleccionado
-  const generateLabel = (qrUrl: string, name: string, school: string, classroom: string, language: PrinterLanguage): string => {
-    switch (language) {
-      case 'zpl':
-        return generateZPLLabel(qrUrl, name, school, classroom, language);
-      case 'tspl':
-        return generateTSPLLabel(qrUrl, name, school, classroom);
-      case 'epl':
-        return generateEPLLabel(qrUrl, name, school, classroom);
-      case 'dpl':
-        return generateDPLLabel(qrUrl, name, school, classroom);
-      default:
-        return generateZPLLabel(qrUrl, name, school, classroom);
-    }
-  };
-
-  // Enviar etiqueta al servidor RawBT
-  const sendToRawBTServer = async (labelContent: string, quantity: number = 1): Promise<void> => {
-    try {
-      setIsLoading(true);
-      
-      // Verificar si el servidor está disponible
-      const serverAvailable = await checkRawBTServer();
-      if (!serverAvailable) {
-        throw new Error('Servidor RawBT no disponible');
-      }
-
-      // Generar múltiples etiquetas si es necesario
-      let finalContent = '';
-      for (let i = 0; i < quantity; i++) {
-        finalContent += labelContent + '\n\n';
-      }
-
-      const response = await fetch(RAWBT_SERVER_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/plain',
-          'Accept': '*/*'
-        },
-        body: finalContent
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      setStatus({
-        type: 'success',
-        message: `${quantity} etiqueta(s) enviada(s) a RawBT correctamente`
-      });
-      setServerConnected(true);
-
-    } catch (error) {
-      console.error('Error sending to RawBT server:', error);
-      
-      // Fallback: descargar archivo
-      const blob = new Blob([labelContent], { type: 'text/plain' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `etiqueta_${printerLanguage}_${quantity}x_${Date.now()}.txt`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(link.href);
-      
-      setStatus({
-        type: 'error',
-        message: 'Error con servidor RawBT. Archivo descargado como respaldo.'
-      });
-      setServerConnected(false);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Imprimir etiquetas usando RawBT Server
-  const printWithRawBTServer = async (quantity: number = 1): Promise<void> => {
-    if (!qrData) return;
-
-    const labelContent = generateLabel(
-      qrData.qr_url,
-      qrData.name,
-      qrData.school,
-      qrData.classroom,
-      printerLanguage
-    );
-
-    await sendToRawBTServer(labelContent, quantity);
-  };
-
-  // Probar conexión y imprimir etiqueta de prueba
-  const testRawBTConnection = async (): Promise<void> => {
-    try {
-      setIsLoading(true);
-      
-      const serverAvailable = await checkRawBTServer();
-      if (!serverAvailable) {
-        setStatus({
-          type: 'error',
-          message: 'Servidor RawBT no disponible en 127.0.0.1:8080'
-        });
-        return;
-      }
-
-      // Generar etiqueta de prueba
-      const testLabel = generateLabel(
-        'https://example.com/qr/test123',
-        'PRUEBA IMPRESION',
-        'Escuela Test',
-        'Aula 101',
-        printerLanguage
-      );
-
-      const response = await fetch(RAWBT_SERVER_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/plain',
-        },
-        body: testLabel
-      });
-
-      if (response.ok) {
-        setStatus({
-          type: 'success',
-          message: `Prueba ${printerLanguage.toUpperCase()} enviada correctamente a RawBT`
-        });
-        setServerConnected(true);
-      } else {
-        throw new Error(`Error HTTP: ${response.status}`);
-      }
-
-    } catch (error) {
-      console.error('Test connection error:', error);
-      setStatus({
-        type: 'error',
-        message: 'Error de conexión con servidor RawBT'
-      });
-      setServerConnected(false);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // =====================
-  // FUNCIONES ORIGINALES (sin cambios)
-  // =====================
-
+  // Load data only when token is available
   useEffect(() => {
     if (token) {
       loadSchools();
@@ -422,24 +114,19 @@ P1,1
     }
   }, [token]);
 
+  // Load classrooms when school changes
   useEffect(() => {
     if (selectedSchool && token) {
       loadClassrooms(selectedSchool);
     }
   }, [selectedSchool, token]);
 
+  // Cleanup camera stream on unmount or when modal closes
   useEffect(() => {
     return () => {
       cleanupCamera();
     };
   }, []);
-
-  // Verificar servidor al expandir
-  useEffect(() => {
-    if (isExpanded) {
-      checkRawBTServer().then(setServerConnected);
-    }
-  }, [isExpanded]);
 
   const cleanupCamera = (): void => {
     if (cameraStream) {
@@ -554,6 +241,7 @@ P1,1
     try {
       setIsLoading(true);
       
+      // Clean up any existing stream first
       cleanupCamera();
       
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -568,6 +256,7 @@ P1,1
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        // Wait for video to be ready
         await new Promise<void>((resolve) => {
           if (videoRef.current) {
             videoRef.current.onloadedmetadata = () => resolve();
@@ -590,6 +279,7 @@ P1,1
     const canvas = canvasRef.current;
     const video = videoRef.current;
     
+    // Ensure video dimensions are available
     if (video.videoWidth === 0 || video.videoHeight === 0) {
       setStatus({ type: 'error', message: 'Video no está listo para capturar' });
       return;
@@ -607,6 +297,7 @@ P1,1
     setCapturedImage(imageData);
     setCurrentStep('form');
     
+    // Clean up camera after capture
     cleanupCamera();
     setStatus({ type: 'success', message: 'Foto capturada exitosamente' });
   };
@@ -650,6 +341,7 @@ P1,1
     try {
       let templateId = formData.template_id;
 
+      // Create new template only if user chooses to create new one
       if (!formData.use_existing_template) {
         console.log('Creating new template at:', `${API_BASE_URL}/assets/templates/`);
         const templateResponse = await fetch(`${API_BASE_URL}/assets/templates/`, {
@@ -675,6 +367,7 @@ P1,1
         templateId = template.id;
       }
 
+      // Create the asset using existing or newly created template
       console.log('Creating asset at:', `${API_BASE_URL}/assets/`);
       const assetResponse = await fetch(`${API_BASE_URL}/assets/`, {
         method: 'POST',
@@ -699,6 +392,7 @@ P1,1
       const asset = await assetResponse.json();
       console.log('Asset created:', asset);
 
+      // Generate QR Code
       console.log('Generating QR at:', `${API_BASE_URL}/assets/${asset.id}/qr-codes/`);
       const qrResponse = await fetch(`${API_BASE_URL}/assets/${asset.id}/qr-codes/`, {
         method: 'POST',
@@ -735,10 +429,235 @@ P1,1
     }
   };
 
+  const connectBluetooth = async (): Promise<void> => {
+    try {
+      setIsLoading(true);
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }]
+      });
+      
+      if (!device.gatt) {
+        throw new Error('GATT not available');
+      }
+      
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+      const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+      
+      setBluetoothPrinter({ device, characteristic });
+      setStatus({ type: 'success', message: 'Impresora conectada exitosamente' });
+    } catch (error) {
+      setStatus({ type: 'error', message: 'Error al conectar con la impresora' });
+      console.error('Bluetooth error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+// =====================
+// Función principal
+// =====================
+// =====================
+// Función principal
+// =====================
+const printQR = async (): Promise<void> => {
+  if (!qrData) return;
+
+  if (!bluetoothPrinter) {
+    await connectBluetooth();
+    if (!bluetoothPrinter) return;
+  }
+
+  try {
+    setIsLoading(true);
+
+    let base64Image = qrData.qr_url;
+    if (!qrData.qr_url.startsWith('data:')) {
+      const response = await fetch(qrData.qr_url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const blob = await response.blob();
+      base64Image = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    const commands: Uint8Array[] = [];
+
+    // Reset impresora
+    commands.push(new Uint8Array([0x1B, 0x40]));
+
+    // Altura de etiqueta fija: 200px (25 mm)
+    const qrCommands = await generateFullSticker(base64Image, 200); 
+    commands.push(...qrCommands);
+
+    // Avanzar altura etiqueta + gap
+    const labelHeightDots = 200; // 25 mm
+    const gapDots = 12;          // 1–1.5 mm
+    const advance = labelHeightDots + gapDots;
+
+    // ESC J n → avanzar n dots (0–255)
+    commands.push(new Uint8Array([0x1B, 0x4A, advance & 0xFF]));
+
+    // Corte (si tu impresora tiene cutter)
+    commands.push(new Uint8Array([0x1D, 0x56, 0x01])); 
+
+    // Enviar
+    for (const command of commands) {
+      await sendChunked(command);
+    }
+
+    setStatus({ type: 'success', message: 'Etiqueta QR impresa correctamente' });
+  } catch (error) {
+    setStatus({ type: 'error', message: 'Error al imprimir etiqueta QR' });
+    console.error('Print error:', error);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+// =====================
+// Generar bloque completo de etiqueta
+// =====================
+const generateFullSticker = async (
+  base64: string,
+  stickerHeight: number = 200 // 25mm = 200px
+): Promise<Uint8Array[]> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      const printerWidth = 576; // ancho impresora (80mm)
+      const qrSize = 160;       // QR más chico que etiqueta
+
+      canvas.width = printerWidth;
+      canvas.height = stickerHeight;
+
+      if (!ctx) return resolve([]);
+
+      // Fondo blanco
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Centrar QR
+      const xOffset = (canvas.width - qrSize) / 2;
+      const yOffset = (stickerHeight - qrSize) / 2;
+      ctx.drawImage(img, xOffset, yOffset, qrSize, qrSize);
+
+      // Convertir a bitmap monocromo
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const commands: Uint8Array[] = [];
+      const bytesPerLine = Math.ceil(canvas.width / 8);
+      const bitmapData = new Uint8Array(bytesPerLine * canvas.height);
+
+      for (let y = 0; y < canvas.height; y++) {
+        for (let x = 0; x < canvas.width; x++) {
+          const i = (y * canvas.width + x) * 4;
+          const gray =
+            0.299 * imageData.data[i] +
+            0.587 * imageData.data[i + 1] +
+            0.114 * imageData.data[i + 2];
+          if (gray < 128) {
+            bitmapData[y * bytesPerLine + (x >> 3)] |= 1 << (7 - (x % 8));
+          }
+        }
+      }
+
+      // Enviar en bloques
+      const blockHeight = 24;
+      for (let y = 0; y < canvas.height; y += blockHeight) {
+        const h = Math.min(blockHeight, canvas.height - y);
+        const slice = bitmapData.slice(y * bytesPerLine, (y + h) * bytesPerLine);
+
+        const xL = bytesPerLine & 0xff;
+        const xH = (bytesPerLine >> 8) & 0xff;
+        const yL = h & 0xff;
+        const yH = (h >> 8) & 0xff;
+
+        commands.push(
+          new Uint8Array([0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH])
+        );
+
+        for (let i = 0; i < slice.length; i += 100) {
+          commands.push(slice.slice(i, i + 100));
+        }
+      }
+
+      resolve(commands);
+    };
+    img.src = base64;
+  });
+};
+
+
+
+const sendChunked = async (command: Uint8Array): Promise<void> => {
+  const buffer = new ArrayBuffer(command.length);
+  const view = new Uint8Array(buffer);
+  view.set(command);
+
+  await bluetoothPrinter!.characteristic.writeValue(buffer);
+  await new Promise(resolve => setTimeout(resolve, command.length <= 8 ? 10 : 30));
+};
+
+
+
+
+// Función para imprimir múltiples pegatinas
+const printMultipleStickers = async (quantity: number = 1): Promise<void> => {
+  if (quantity < 1 || quantity > 5) {
+    throw new Error('Cantidad debe estar entre 1 y 5 para pegatinas');
+  }
+  
+  
+  for (let i = 0; i < quantity; i++) {
+    await printQR();
+    
+    // Pausa más corta entre pegatinas pequeñas
+    if (i < quantity - 1) {
+      await new Promise(resolve => setTimeout(resolve, 800));
+    }
+  }
+  
+  setStatus({ type: 'success', message: `${quantity} pegatina(s) impresas exitosamente` });
+};
+
+// Función de prueba simplificada
+const testPrinterConnection = async (): Promise<void> => {
+  if (!bluetoothPrinter?.characteristic) {
+    throw new Error('Impresora no conectada');
+  }
+  
+  try {
+    // Reset de impresora
+    const resetCommand = new Uint8Array([0x1B, 0x40]);
+    const resetBuffer = new ArrayBuffer(resetCommand.length);
+    const resetView = new Uint8Array(resetBuffer);
+    resetView.set(resetCommand);
+    await bluetoothPrinter.characteristic.writeValue(resetBuffer);
+    
+    // Texto de prueba
+    const testText = new TextEncoder().encode('TEST PEGATINA OK\n\n\n');
+    const textBuffer = new ArrayBuffer(testText.length);
+    const textView = new Uint8Array(textBuffer);
+    textView.set(testText);
+    await bluetoothPrinter.characteristic.writeValue(textBuffer);
+    
+    setStatus({ type: 'success', message: 'Prueba de impresora exitosa' });
+  } catch (error) {
+    throw new Error('Fallo en prueba de impresora');
+  }
+};
+// Ya no necesitamos esta función, está integrada en printImageBase64
   const downloadQR = async (): Promise<void> => {
     if (!qrData || !qrData.qr_url) return;
 
     try {
+      // If it's already a data URL, use it directly
       if (qrData.qr_url.startsWith('data:')) {
         const link = document.createElement('a');
         link.download = `QR_${qrData.name}_${Date.now()}.png`;
@@ -747,6 +666,7 @@ P1,1
         return;
       }
 
+      // If it's a URL, fetch the image and convert to blob
       const response = await fetch(qrData.qr_url, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -765,6 +685,7 @@ P1,1
       link.href = url;
       link.click();
       
+      // Clean up the blob URL
       URL.revokeObjectURL(url);
       
       setStatus({ type: 'success', message: 'QR descargado exitosamente' });
@@ -775,7 +696,7 @@ P1,1
   };
 
   const resetForm = (): void => {
-    cleanupCamera();
+    cleanupCamera(); // Clean up camera before resetting
     setCurrentStep('camera');
     setCapturedImage(null);
     setQrData(null);
@@ -795,14 +716,14 @@ P1,1
   };
 
   const handleClose = (): void => {
-    cleanupCamera();
+    cleanupCamera(); // Properly clean up camera
     setIsExpanded(false);
     resetForm();
   };
 
   const handleStepBack = (): void => {
     if (currentStep === 'form') {
-      cleanupCamera();
+      cleanupCamera(); // Clean up when going back to camera
       setCurrentStep('camera');
     }
   };
@@ -849,23 +770,12 @@ P1,1
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-xl font-semibold text-gray-800">Crear Activo</h2>
-              <div className="flex items-center space-x-2">
-                {/* Indicador de conexión RawBT */}
-                <div className={`flex items-center px-2 py-1 rounded-full text-xs ${
-                  serverConnected 
-                    ? 'bg-green-100 text-green-800' 
-                    : 'bg-red-100 text-red-800'
-                }`}>
-                  <Wifi className={`w-3 h-3 mr-1 ${serverConnected ? 'text-green-600' : 'text-red-600'}`} />
-                  {serverConnected ? 'Conectado' : 'Desconectado'}
-                </div>
-                <button
-                  onClick={handleClose}
-                  className="p-2 hover:bg-gray-100 rounded-full"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
+              <button
+                onClick={handleClose}
+                className="p-2 hover:bg-gray-100 rounded-full"
+              >
+                <X className="w-6 h-6" />
+              </button>
             </div>
 
             <div className="p-4 max-h-[70vh] overflow-y-auto">
@@ -908,58 +818,6 @@ P1,1
                       </button>
                     )}
                   </div>
-
-                  {/* Configuración de impresora */}
-                  <div className="bg-blue-50 p-4 rounded-lg border">
-                    <h4 className="text-sm font-medium text-blue-800 mb-3 flex items-center">
-                      <Printer className="w-4 h-4 mr-2" />
-                      Configuración de Impresora
-                    </h4>
-                    
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-medium text-blue-700 mb-1">
-                          Lenguaje de Impresora:
-                        </label>
-                        <select
-                          value={printerLanguage}
-                          onChange={(e) => setPrinterLanguage(e.target.value as PrinterLanguage)}
-                          className="w-full px-2 py-1 text-sm border border-blue-300 rounded focus:ring-1 focus:ring-blue-500"
-                        >
-                          <option value="zpl">ZPL (Zebra)</option>
-                          <option value="tspl">TSPL (TSC)</option>
-                          <option value="epl">EPL (Eltron)</option>
-                          <option value="dpl">DPL (Datamax)</option>
-                        </select>
-                      </div>
-                      
-                      <div className="text-xs text-blue-600">
-                        • Etiqueta: 5cm × 2.5cm (200×100 puntos)
-                        • Servidor: 127.0.0.1:8080
-                        • Compatible con RawBT Server
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Botones de prueba */}
-                  <div className="space-y-2">
-                    <button
-                      onClick={testRawBTConnection}
-                      disabled={isLoading}
-                      className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium flex items-center justify-center text-sm disabled:opacity-50"
-                    >
-                      {isLoading ? (
-                        <Loader className="w-4 h-4 animate-spin mr-2" />
-                      ) : (
-                        <Wifi className="w-4 h-4 mr-2" />
-                      )}
-                      Probar Conexión RawBT ({printerLanguage.toUpperCase()})
-                    </button>
-                    
-                    <p className="text-xs text-gray-500 text-center">
-                      Asegúrate de tener RawBT Server ejecutándose en puerto 8080
-                    </p>
-                  </div>
                 </div>
               )}
 
@@ -975,7 +833,7 @@ P1,1
                       />
                     </div>
                   )}
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Nombre del objeto *
@@ -986,11 +844,9 @@ P1,1
                       onChange={(e) => handleInputChange('name', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
                       placeholder="Ingrese el nombre"
-                      maxLength={20}
                     />
-                    <p className="text-xs text-gray-500 mt-1">Máximo 20 caracteres para impresión</p>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Precio estimado
@@ -1007,12 +863,11 @@ P1,1
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Cantidad de etiquetas
+                      Cantidad
                     </label>
                     <input
                       type="number"
                       min="1"
-                      max="10"
                       value={formData.quantity}
                       onChange={(e) => handleInputChange('quantity', parseInt(e.target.value) || 1)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
@@ -1100,7 +955,7 @@ P1,1
                       onChange={(e) => {
                         setSelectedSchool(e.target.value);
                         handleInputChange('school_id', e.target.value);
-                        handleInputChange('classroom_id', '');
+                        handleInputChange('classroom_id', ''); // Reset classroom
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
                     >
@@ -1188,91 +1043,26 @@ P1,1
                     <p className="text-sm text-gray-600">{qrData.school} - {qrData.classroom}</p>
                   </div>
 
-                  {/* Configuración actual */}
-                  <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-                    <div className="text-xs text-blue-800">
-                      <strong>Configuración actual:</strong><br/>
-                      • Lenguaje: {printerLanguage.toUpperCase()}<br/>
-                      • Tamaño: 5cm × 2.5cm<br/>
-                      • Servidor: {serverConnected ? '✅ Conectado' : '❌ Desconectado'}
-                    </div>
-                  </div>
-
                   <div className="space-y-3">
-                    {/* Botón principal de impresión */}
                     <button
-                      onClick={() => printWithRawBTServer(formData.quantity)}
+                      onClick={printQR}
                       disabled={isLoading}
-                      className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center disabled:opacity-50"
+                      className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
                     >
                       {isLoading ? (
                         <Loader className="w-5 h-5 animate-spin mr-2" />
                       ) : (
                         <Printer className="w-5 h-5 mr-2" />
                       )}
-                      Imprimir {formData.quantity} Etiqueta(s) ({printerLanguage.toUpperCase()})
+                      Imprimir QR
                     </button>
 
-                    {/* Botones para cantidades específicas */}
-                    {formData.quantity === 1 && (
-                      <div className="bg-blue-50 p-3 rounded-lg">
-                        <h4 className="text-sm font-medium text-blue-800 mb-2">Imprimir múltiples etiquetas</h4>
-                        <div className="grid grid-cols-3 gap-2">
-                          <button
-                            onClick={() => printWithRawBTServer(2)}
-                            disabled={isLoading}
-                            className="bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium disabled:opacity-50"
-                          >
-                            2 etiquetas
-                          </button>
-                          <button
-                            onClick={() => printWithRawBTServer(3)}
-                            disabled={isLoading}
-                            className="bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium disabled:opacity-50"
-                          >
-                            3 etiquetas
-                          </button>
-                          <button
-                            onClick={() => printWithRawBTServer(5)}
-                            disabled={isLoading}
-                            className="bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-medium disabled:opacity-50"
-                          >
-                            5 etiquetas
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Botón para cambiar lenguaje de impresora */}
-                    <div className="bg-orange-50 p-3 rounded-lg">
-                      <h4 className="text-sm font-medium text-orange-800 mb-2">Cambiar formato</h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        {(['zpl', 'tspl', 'epl', 'dpl'] as PrinterLanguage[]).map((lang) => (
-                          <button
-                            key={lang}
-                            onClick={() => {
-                              setPrinterLanguage(lang);
-                              setStatus({ type: 'success', message: `Cambiado a ${lang.toUpperCase()}` });
-                            }}
-                            className={`py-2 px-3 rounded-lg text-sm font-medium ${
-                              printerLanguage === lang
-                                ? 'bg-orange-600 text-white'
-                                : 'bg-orange-200 text-orange-800 hover:bg-orange-300'
-                            }`}
-                          >
-                            {lang.toUpperCase()}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Botón de descarga como fallback */}
                     <button
                       onClick={downloadQR}
                       className="w-full bg-gray-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
                     >
                       <Download className="w-5 h-5 mr-2" />
-                      Descargar QR (PNG)
+                      Descargar QR
                     </button>
 
                     <button
@@ -1282,17 +1072,6 @@ P1,1
                       Crear Otro Activo
                     </button>
                   </div>
-
-                  {/* Información sobre RawBT Server */}
-                  <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
-                    <p className="text-xs text-yellow-800 text-left">
-                      <strong>Instrucciones RawBT Server:</strong><br/>
-                      • Ejecuta RawBT Server en tu dispositivo<br/>
-                      • Configurar puerto 8080 en modo RAW<br/>
-                      • Conecta la impresora vía OTG/USB<br/>
-                      • Si falla, descarga archivo y ábrelo en RawBT manualmente
-                    </p>
-                  </div>
                 </div>
               )}
             </div>
@@ -1301,5 +1080,6 @@ P1,1
       )}
     </>
   );
-}
+};
+
 export default AssetCreatorFAB;
