@@ -454,7 +454,7 @@ const AssetCreatorFAB: React.FC = () => {
     }
   };
 
-// =====================
+// // =====================
 // Función principal
 // =====================
 const printQR = async (): Promise<void> => {
@@ -468,23 +468,9 @@ const printQR = async (): Promise<void> => {
   try {
     setIsLoading(true);
 
-    // Obtener imagen base64
-    let base64Image = qrData.qr_url;
-    if (!qrData.qr_url.startsWith('data:')) {
-      const response = await fetch(qrData.qr_url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const blob = await response.blob();
-      base64Image = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      });
-    }
+    // Generar comandos TSPL con QR nativo
+    const tsplCommands = generateTSPLSticker(qrData);
 
-    // Generar comandos TSPL
-    const tsplCommands = await generateTSPLSticker(base64Image);
-    
     // Enviar comandos
     await sendTSPLCommands(tsplCommands);
 
@@ -498,102 +484,27 @@ const printQR = async (): Promise<void> => {
 };
 
 // =====================
-// Generar comandos TSPL para etiqueta completa
-// =====================
-// =====================
 // Generar comandos TSPL para etiqueta 50x25mm
 // =====================
-const generateTSPLSticker = async (base64: string): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
+const generateTSPLSticker = (data: any): string => {
+  const id = data?.id || "SIN-ID";
+  const aulaInfo = data?.classroom || "AULA";
+  const itemInfo = data?.name || "";
 
-    img.onerror = () => reject(new Error('Error al cargar imagen QR'));
-
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-
-        // Medidas reales de la etiqueta a 203 dpi
-        const labelWidthDots = 400; // 50 mm
-        const labelHeightDots = 200; // 25 mm
-
-        // QR cuadrado de 200x200
-        const qrSize = 200;
-        const qrX = 10; // margen izquierdo
-        const qrY = 0;  // margen superior
-
-        canvas.width = labelWidthDots;
-        canvas.height = labelHeightDots;
-
-        if (!ctx) return reject(new Error('No se pudo obtener contexto 2D'));
-
-        // Fondo blanco
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Dibujar QR (sin suavizado)
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(img, qrX, qrY, qrSize, qrSize);
-
-        // Convertir a bitmap monocromo
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const bytesPerLine = Math.ceil(canvas.width / 8);
-        const totalBytes = bytesPerLine * canvas.height;
-        const bitmapData = new Uint8Array(totalBytes);
-
-        // Threshold más alto para contraste
-        const threshold = 160;
-
-        for (let y = 0; y < canvas.height; y++) {
-          for (let x = 0; x < canvas.width; x++) {
-            const pixelIndex = (y * canvas.width + x) * 4;
-            const r = imageData.data[pixelIndex];
-            const g = imageData.data[pixelIndex + 1];
-            const b = imageData.data[pixelIndex + 2];
-            const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-
-            if (gray < threshold) {
-              const byteIndex = y * bytesPerLine + Math.floor(x / 8);
-              const bitIndex = 7 - (x % 8);
-              bitmapData[byteIndex] |= (1 << bitIndex);
-            }
-          }
-        }
-
-        // Pasar a HEX
-        let hexData = '';
-        for (let i = 0; i < bitmapData.length; i++) {
-          hexData += bitmapData[i].toString(16).padStart(2, '0').toUpperCase();
-        }
-
-        // Info de la etiqueta
-        const aulaInfo = qrData?.classroom || 'AULA';
-        const itemInfo = qrData?.name || '';
-
-        // Construir TSPL
-        const tspl = `SIZE 50 mm,25 mm
-GAP 2 mm,0 mm
+  return `
+SIZE 50 mm,25 mm
+GAP 2 mm,0
 DIRECTION 1
 DENSITY 8
 CLS
-BITMAP 20,0,${bytesPerLine},${labelHeightDots},1,${hexData}
+
+QRCODE 20,40,M,5,A,0,M2,S7,"${id}"
 TEXT 230,40,"3",0,1,1,"${aulaInfo}"
-TEXT 230,90,"2",0,1,1,"${itemInfo.substring(0, 15)}"
+TEXT 230,90,"2",0,1,1,"${itemInfo.substring(0, 20)}"
+
 PRINT 1
 `;
-
-        resolve(tspl);
-      } catch (error) {
-        reject(error);
-      }
-    };
-
-    img.src = base64;
-  });
 };
-
 
 // =====================
 // Enviar comandos TSPL
@@ -605,23 +516,21 @@ const sendTSPLCommands = async (tsplString: string): Promise<void> => {
 
   const encoder = new TextEncoder();
   const data = encoder.encode(tsplString);
-  
+
   console.log('Enviando comandos TSPL:', {
     totalBytes: data.length,
-    commands: tsplString.split('\n').map(cmd => cmd.substring(0, 50))
+    preview: tsplString
   });
-  
+
   // Enviar en chunks de 512 bytes
   const chunkSize = 512;
   for (let i = 0; i < data.length; i += chunkSize) {
     const chunk = data.slice(i, Math.min(i + chunkSize, data.length));
     await bluetoothPrinter.characteristic.writeValue(chunk);
-    // Pequeña pausa entre chunks
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 100)); // pequeña pausa
   }
-  
-  // Pausa final para que la impresora procese
-  await new Promise(resolve => setTimeout(resolve, 500));
+
+  await new Promise(resolve => setTimeout(resolve, 500)); // espera final
 };
 
 // =====================
@@ -631,27 +540,22 @@ const printMultipleStickers = async (quantity: number = 1): Promise<void> => {
   if (quantity < 1 || quantity > 5) {
     throw new Error('Cantidad debe estar entre 1 y 5');
   }
-  
+
   try {
     setIsLoading(true);
-    
     for (let i = 0; i < quantity; i++) {
       await printQR();
-      
-      // Pausa entre etiquetas (excepto en la última)
-      if (i < quantity - 1) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
+      if (i < quantity - 1) await new Promise(resolve => setTimeout(resolve, 2000));
     }
-    
-    setStatus({ 
-      type: 'success', 
-      message: `${quantity} etiqueta${quantity > 1 ? 's' : ''} impresa${quantity > 1 ? 's' : ''} correctamente` 
+
+    setStatus({
+      type: 'success',
+      message: `${quantity} etiqueta${quantity > 1 ? 's' : ''} impresa${quantity > 1 ? 's' : ''} correctamente`
     });
   } catch (error) {
-    setStatus({ 
-      type: 'error', 
-      message: `Error al imprimir etiquetas: ${error instanceof Error ? error.message : 'Error desconocido'}` 
+    setStatus({
+      type: 'error',
+      message: `Error al imprimir etiquetas: ${error instanceof Error ? error.message : 'Error desconocido'}`
     });
     throw error;
   } finally {
@@ -660,7 +564,7 @@ const printMultipleStickers = async (quantity: number = 1): Promise<void> => {
 };
 
 // =====================
-// Función auxiliar: Probar impresión de texto simple
+// Imprimir prueba simple
 // =====================
 const testPrint = async (): Promise<void> => {
   if (!bluetoothPrinter) {
@@ -670,9 +574,9 @@ const testPrint = async (): Promise<void> => {
 
   try {
     setIsLoading(true);
-    
-    const testTSPL = `SIZE 50 mm, 25 mm
-GAP 2 mm, 0 mm
+    const testTSPL = `
+SIZE 50 mm,25 mm
+GAP 2 mm,0
 DIRECTION 1
 DENSITY 8
 CLS
@@ -680,7 +584,6 @@ TEXT 50,50,"4",0,1,1,"PRUEBA"
 TEXT 50,100,"3",0,1,1,"Etiqueta OK"
 PRINT 1
 `;
-    
     await sendTSPLCommands(testTSPL);
     setStatus({ type: 'success', message: 'Impresión de prueba enviada' });
   } catch (error) {
