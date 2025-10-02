@@ -507,70 +507,96 @@ const printQR = async (): Promise<void> => {
 // Generar comandos TSPL para etiqueta completa
 // =====================
 const generateTSPLSticker = async (base64: string): Promise<string> => {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const img = new Image();
+    img.crossOrigin = 'anonymous';
+    
+    img.onerror = () => reject(new Error('Error al cargar imagen QR'));
+    
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
 
-      // Dimensiones: 50mm = 400px @ 203dpi, 25mm = 200px
-      const labelWidthDots = 400;
-      const labelHeightDots = 200;
-      const qrSize = 160; // QR centrado
+        // Dimensiones optimizadas: 50mm = ~394px @ 200dpi, 25mm = ~197px
+        const labelWidthDots = 384; // Múltiplo de 8 para facilitar conversión
+        const labelHeightDots = 200;
+        const qrSize = 180; // QR más grande para mejor lectura
 
-      canvas.width = labelWidthDots;
-      canvas.height = labelHeightDots;
+        canvas.width = labelWidthDots;
+        canvas.height = labelHeightDots;
 
-      if (!ctx) return resolve('');
+        if (!ctx) return reject(new Error('No se pudo obtener contexto 2D'));
 
-      // Fondo blanco
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // Fondo blanco completo
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Centrar QR
-      const xOffset = (canvas.width - qrSize) / 2;
-      const yOffset = (canvas.height - qrSize) / 2;
-      ctx.drawImage(img, xOffset, yOffset, qrSize, qrSize);
+        // Centrar QR con margen
+        const xOffset = (canvas.width - qrSize) / 2;
+        const yOffset = (canvas.height - qrSize) / 2;
+        
+        // Dibujar QR con antialiasing desactivado para mejor contraste
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, xOffset, yOffset, qrSize, qrSize);
 
-      // Convertir a bitmap monocromo
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const bytesPerLine = Math.ceil(canvas.width / 8);
-      const bitmapData: number[] = [];
+        // Convertir a bitmap monocromo con umbral ajustado
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const bytesPerLine = canvas.width / 8; // Ahora es entero
+        const totalBytes = bytesPerLine * canvas.height;
+        const bitmapData = new Uint8Array(totalBytes);
 
-      for (let y = 0; y < canvas.height; y++) {
-        for (let x = 0; x < canvas.width; x++) {
-          const i = (y * canvas.width + x) * 4;
-          const gray =
-            0.299 * imageData.data[i] +
-            0.587 * imageData.data[i + 1] +
-            0.114 * imageData.data[i + 2];
-          
-          const byteIndex = y * bytesPerLine + Math.floor(x / 8);
-          const bitIndex = 7 - (x % 8);
-          
-          if (!bitmapData[byteIndex]) bitmapData[byteIndex] = 0;
-          if (gray < 128) {
-            bitmapData[byteIndex] |= (1 << bitIndex);
+        // Umbral más alto para mejor contraste (180 en lugar de 128)
+        const threshold = 180;
+
+        for (let y = 0; y < canvas.height; y++) {
+          for (let x = 0; x < canvas.width; x++) {
+            const pixelIndex = (y * canvas.width + x) * 4;
+            
+            // Calcular luminosidad
+            const r = imageData.data[pixelIndex];
+            const g = imageData.data[pixelIndex + 1];
+            const b = imageData.data[pixelIndex + 2];
+            const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+            
+            // Si el pixel es oscuro (por debajo del umbral), marcarlo como negro
+            if (gray < threshold) {
+              const byteIndex = y * bytesPerLine + Math.floor(x / 8);
+              const bitIndex = 7 - (x % 8); // MSB primero
+              bitmapData[byteIndex] |= (1 << bitIndex);
+            }
           }
         }
-      }
 
-      // Convertir bitmap a hexadecimal para TSPL
-      const hexData = bitmapData.map(b => 
-        b.toString(16).padStart(2, '0').toUpperCase()
-      ).join('');
+        // Convertir a hexadecimal con formato correcto
+        let hexData = '';
+        for (let i = 0; i < bitmapData.length; i++) {
+          hexData += bitmapData[i].toString(16).padStart(2, '0').toUpperCase();
+        }
 
-      // Construir comandos TSPL
-      const tspl = `SIZE 50 mm,25 mm
-GAP 2 mm,0 mm
+        // Construir comandos TSPL con sintaxis correcta
+        const tspl = `SIZE 50 mm, 25 mm
+GAP 2 mm, 0 mm
 DIRECTION 1
 CLS
-BITMAP 0,0,${bytesPerLine},${labelHeightDots},1,${hexData}
-PRINT 1,1
+BITMAP 0,10,${bytesPerLine},${labelHeightDots},1,${hexData}
+PRINT 1
 `;
 
-      resolve(tspl);
+        console.log('TSPL generado:', {
+          width: labelWidthDots,
+          height: labelHeightDots,
+          bytesPerLine,
+          totalBytes,
+          hexLength: hexData.length
+        });
+
+        resolve(tspl);
+      } catch (error) {
+        reject(error);
+      }
     };
+    
     img.src = base64;
   });
 };
