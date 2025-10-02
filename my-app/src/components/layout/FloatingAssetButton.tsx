@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Camera, Plus, X, Save, Printer, Download, Check, AlertCircle, Loader } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
 
@@ -76,7 +77,7 @@ interface BluetoothPrinter {
 type StepType = 'camera' | 'form' | 'qr';
 
 const AssetCreatorFAB: React.FC = () => {
-  const [token] = useState('demo-token'); // Simulated token
+  const { token } = useAuth(); // Get token from auth context
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [currentStep, setCurrentStep] = useState<StepType>('camera');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -104,6 +105,7 @@ const AssetCreatorFAB: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Load data only when token is available
   useEffect(() => {
     if (token) {
       loadSchools();
@@ -112,12 +114,14 @@ const AssetCreatorFAB: React.FC = () => {
     }
   }, [token]);
 
+  // Load classrooms when school changes
   useEffect(() => {
     if (selectedSchool && token) {
       loadClassrooms(selectedSchool);
     }
   }, [selectedSchool, token]);
 
+  // Cleanup camera stream on unmount or when modal closes
   useEffect(() => {
     return () => {
       cleanupCamera();
@@ -139,6 +143,7 @@ const AssetCreatorFAB: React.FC = () => {
 
   const loadSchools = async (): Promise<void> => {
     try {
+      console.log('Loading schools from:', `${API_BASE_URL}/schools/`);
       const response = await fetch(`${API_BASE_URL}/schools/`, {
         method: 'GET',
         headers: {
@@ -152,6 +157,7 @@ const AssetCreatorFAB: React.FC = () => {
       }
       
       const data: School[] = await response.json();
+      console.log('Schools loaded:', data);
       setSchools(data);
       setStatus({ type: 'success', message: 'Escuelas cargadas correctamente' });
     } catch (error) {
@@ -162,6 +168,7 @@ const AssetCreatorFAB: React.FC = () => {
 
   const loadCategories = async (): Promise<void> => {
     try {
+      console.log('Loading categories from:', `${API_BASE_URL}/assets/categories/`);
       const response = await fetch(`${API_BASE_URL}/assets/categories/`, {
         method: 'GET',
         headers: {
@@ -175,6 +182,7 @@ const AssetCreatorFAB: React.FC = () => {
       }
       
       const data: Category[] = await response.json();
+      console.log('Categories loaded:', data);
       setCategories(data);
     } catch (error) {
       console.error('Error loading categories:', error);
@@ -183,6 +191,7 @@ const AssetCreatorFAB: React.FC = () => {
 
   const loadTemplates = async (): Promise<void> => {
     try {
+      console.log('Loading templates from:', `${API_BASE_URL}/assets/templates/`);
       const response = await fetch(`${API_BASE_URL}/assets/templates/`, {
         method: 'GET',
         headers: {
@@ -196,6 +205,7 @@ const AssetCreatorFAB: React.FC = () => {
       }
       
       const data: Template[] = await response.json();
+      console.log('Templates loaded:', data);
       setTemplates(data);
     } catch (error) {
       console.error('Error loading templates:', error);
@@ -204,6 +214,7 @@ const AssetCreatorFAB: React.FC = () => {
 
   const loadClassrooms = async (schoolId: string): Promise<void> => {
     try {
+      console.log('Loading classrooms from:', `${API_BASE_URL}/schools/${schoolId}/classrooms/`);
       const response = await fetch(`${API_BASE_URL}/schools/${schoolId}/classrooms/`, {
         method: 'GET',
         headers: {
@@ -217,6 +228,7 @@ const AssetCreatorFAB: React.FC = () => {
       }
       
       const data: Classroom[] = await response.json();
+      console.log('Classrooms loaded:', data);
       setClassrooms(data);
       setStatus({ type: 'success', message: 'Aulas cargadas correctamente' });
     } catch (error) {
@@ -228,6 +240,8 @@ const AssetCreatorFAB: React.FC = () => {
   const startCamera = async (): Promise<void> => {
     try {
       setIsLoading(true);
+      
+      // Clean up any existing stream first
       cleanupCamera();
       
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -242,6 +256,7 @@ const AssetCreatorFAB: React.FC = () => {
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        // Wait for video to be ready
         await new Promise<void>((resolve) => {
           if (videoRef.current) {
             videoRef.current.onloadedmetadata = () => resolve();
@@ -264,6 +279,7 @@ const AssetCreatorFAB: React.FC = () => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
     
+    // Ensure video dimensions are available
     if (video.videoWidth === 0 || video.videoHeight === 0) {
       setStatus({ type: 'error', message: 'Video no está listo para capturar' });
       return;
@@ -281,6 +297,7 @@ const AssetCreatorFAB: React.FC = () => {
     setCapturedImage(imageData);
     setCurrentStep('form');
     
+    // Clean up camera after capture
     cleanupCamera();
     setStatus({ type: 'success', message: 'Foto capturada exitosamente' });
   };
@@ -324,7 +341,9 @@ const AssetCreatorFAB: React.FC = () => {
     try {
       let templateId = formData.template_id;
 
+      // Create new template only if user chooses to create new one
       if (!formData.use_existing_template) {
+        console.log('Creating new template at:', `${API_BASE_URL}/assets/templates/`);
         const templateResponse = await fetch(`${API_BASE_URL}/assets/templates/`, {
           method: 'POST',
           headers: { 
@@ -344,9 +363,12 @@ const AssetCreatorFAB: React.FC = () => {
           throw new Error(`Template creation failed with status: ${templateResponse.status}`);
         }
         const template = await templateResponse.json();
+        console.log('Template created:', template);
         templateId = template.id;
       }
 
+      // Create the asset using existing or newly created template
+      console.log('Creating asset at:', `${API_BASE_URL}/assets/`);
       const assetResponse = await fetch(`${API_BASE_URL}/assets/`, {
         method: 'POST',
         headers: { 
@@ -368,7 +390,10 @@ const AssetCreatorFAB: React.FC = () => {
         throw new Error(`Asset creation failed with status: ${assetResponse.status}`);
       }
       const asset = await assetResponse.json();
+      console.log('Asset created:', asset);
 
+      // Generate QR Code
+      console.log('Generating QR at:', `${API_BASE_URL}/assets/${asset.id}/qr-codes/`);
       const qrResponse = await fetch(`${API_BASE_URL}/assets/${asset.id}/qr-codes/`, {
         method: 'POST',
         headers: {
@@ -381,6 +406,7 @@ const AssetCreatorFAB: React.FC = () => {
         throw new Error(`QR generation failed with status: ${qrResponse.status}`);
       }
       const qr = await qrResponse.json();
+      console.log('QR generated:', qr);
 
       const selectedSchoolData = schools.find(s => s.id === formData.school_id);
       const selectedClassroomData = classrooms.find(c => c.id === formData.classroom_id);
@@ -403,24 +429,11 @@ const AssetCreatorFAB: React.FC = () => {
     }
   };
 
-  // =====================
-  // CONEXIÓN BLUETOOTH CORREGIDA
-  // =====================
   const connectBluetooth = async (): Promise<void> => {
     try {
       setIsLoading(true);
-      
-      // UUIDs estándar para impresoras térmicas ESC/POS
       const device = await navigator.bluetooth.requestDevice({
-        filters: [
-          { services: [0x18F0] }, // Servicio estándar de impresoras
-          { namePrefix: 'Nexus' },
-          { namePrefix: 'ZNX' }
-        ],
-        optionalServices: [
-          '000018f0-0000-1000-8000-00805f9b34fb',
-          '00001101-0000-1000-8000-00805f9b34fb' // Serial Port Profile
-        ]
+        filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }]
       });
       
       if (!device.gatt) {
@@ -428,297 +441,202 @@ const AssetCreatorFAB: React.FC = () => {
       }
       
       const server = await device.gatt.connect();
-      
-      // Intentar diferentes servicios comunes
-      let characteristic;
-      try {
-        const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-        characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
-      } catch {
-        // Intenta con el servicio SPP estándar
-        const service = await server.getPrimaryService('00001101-0000-1000-8000-00805f9b34fb');
-        characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
-      }
+      const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+      const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
       
       setBluetoothPrinter({ device, characteristic });
       setStatus({ type: 'success', message: 'Impresora conectada exitosamente' });
     } catch (error) {
-      setStatus({ type: 'error', message: 'Error al conectar con la impresora. Verifica que esté encendida.' });
+      setStatus({ type: 'error', message: 'Error al conectar con la impresora' });
       console.error('Bluetooth error:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // =====================
-  // ENVÍO DE COMANDOS CORREGIDO
-  // =====================
-  const sendCommand = async (command: Uint8Array): Promise<void> => {
-    if (!bluetoothPrinter?.characteristic) {
-      throw new Error('Impresora no conectada');
+// =====================
+// Función principal
+// =====================
+// =====================
+// Función principal
+// =====================
+// =====================
+// Imprimir etiqueta QR con TSPL
+// =====================
+const printQR = async (): Promise<void> => {
+  if (!qrData) return;
+
+  if (!bluetoothPrinter) {
+    await connectBluetooth();
+    if (!bluetoothPrinter) return;
+  }
+
+  try {
+    setIsLoading(true);
+
+    // Obtener imagen base64
+    let base64Image = qrData.qr_url;
+    if (!qrData.qr_url.startsWith('data:')) {
+      const response = await fetch(qrData.qr_url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const blob = await response.blob();
+      base64Image = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
     }
+
+    // Generar comandos TSPL
+    const tsplCommands = await generateTSPLSticker(base64Image);
     
-    const CHUNK_SIZE = 20; // Tamaño seguro para BLE
-    
-    for (let i = 0; i < command.length; i += CHUNK_SIZE) {
-      const chunk = command.slice(i, i + CHUNK_SIZE);
-      const buffer = new ArrayBuffer(chunk.length);
-      const view = new Uint8Array(buffer);
-      view.set(chunk);
-      
-      await bluetoothPrinter.characteristic.writeValue(buffer);
-      
-      // Espera necesaria para que la impresora procese
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-  };
+    // Enviar comandos
+    await sendTSPLCommands(tsplCommands);
 
-  // =====================
-  // GENERACIÓN DE IMAGEN BITMAP CORREGIDA
-  // =====================
-  const imageToEscPosBitmap = async (base64Image: string, maxWidth: number = 384): Promise<Uint8Array[]> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return resolve([]);
+    setStatus({ type: 'success', message: 'Etiqueta QR impresa correctamente' });
+  } catch (error) {
+    setStatus({ type: 'error', message: 'Error al imprimir etiqueta QR' });
+    console.error('Print error:', error);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
-        // Calcular dimensiones manteniendo proporción
-        let width = img.width;
-        let height = img.height;
-        
-        if (width > maxWidth) {
-          height = (height * maxWidth) / width;
-          width = maxWidth;
-        }
+// =====================
+// Generar comandos TSPL para etiqueta completa
+// =====================
+const generateTSPLSticker = async (base64: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
 
-        canvas.width = width;
-        canvas.height = height;
+      // Dimensiones: 50mm = 400px @ 203dpi, 25mm = 200px
+      const labelWidthDots = 400;
+      const labelHeightDots = 200;
+      const qrSize = 160; // QR centrado
 
-        // Fondo blanco
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, width, height);
-        ctx.drawImage(img, 0, 0, width, height);
+      canvas.width = labelWidthDots;
+      canvas.height = labelHeightDots;
 
-        const imageData = ctx.getImageData(0, 0, width, height);
-        const commands: Uint8Array[] = [];
+      if (!ctx) return resolve('');
 
-        // Convertir a monocromo
-        const widthBytes = Math.ceil(width / 8);
-        const bitmap = new Uint8Array(widthBytes * height);
+      // Fondo blanco
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        for (let y = 0; y < height; y++) {
-          for (let x = 0; x < width; x++) {
-            const idx = (y * width + x) * 4;
-            const gray = 0.299 * imageData.data[idx] + 
-                        0.587 * imageData.data[idx + 1] + 
-                        0.114 * imageData.data[idx + 2];
-            
-            if (gray < 128) {
-              const bytePos = y * widthBytes + Math.floor(x / 8);
-              const bitPos = 7 - (x % 8);
-              bitmap[bytePos] |= (1 << bitPos);
-            }
+      // Centrar QR
+      const xOffset = (canvas.width - qrSize) / 2;
+      const yOffset = (canvas.height - qrSize) / 2;
+      ctx.drawImage(img, xOffset, yOffset, qrSize, qrSize);
+
+      // Convertir a bitmap monocromo
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const bytesPerLine = Math.ceil(canvas.width / 8);
+      const bitmapData: number[] = [];
+
+      for (let y = 0; y < canvas.height; y++) {
+        for (let x = 0; x < canvas.width; x++) {
+          const i = (y * canvas.width + x) * 4;
+          const gray =
+            0.299 * imageData.data[i] +
+            0.587 * imageData.data[i + 1] +
+            0.114 * imageData.data[i + 2];
+          
+          const byteIndex = y * bytesPerLine + Math.floor(x / 8);
+          const bitIndex = 7 - (x % 8);
+          
+          if (!bitmapData[byteIndex]) bitmapData[byteIndex] = 0;
+          if (gray < 128) {
+            bitmapData[byteIndex] |= (1 << bitIndex);
           }
         }
-
-        // Dividir en bloques de 24 líneas (estándar ESC/POS)
-        for (let y = 0; y < height; y += 24) {
-          const blockHeight = Math.min(24, height - y);
-          const blockData = bitmap.slice(y * widthBytes, (y + blockHeight) * widthBytes);
-
-          // Comando GS v 0: Imprimir imagen raster
-          const header = new Uint8Array([
-            0x1D, 0x76, 0x30, 0x00,  // GS v 0 m
-            widthBytes & 0xFF,        // xL
-            (widthBytes >> 8) & 0xFF, // xH
-            blockHeight & 0xFF,       // yL
-            (blockHeight >> 8) & 0xFF // yH
-          ]);
-
-          commands.push(header);
-          commands.push(blockData);
-        }
-
-        resolve(commands);
-      };
-
-      img.onerror = () => {
-        console.error('Error loading image');
-        resolve([]);
-      };
-
-      img.src = base64Image;
-    });
-  };
-
-  // =====================
-  // IMPRESIÓN PRINCIPAL CORREGIDA
-  // =====================
-  const printQR = async (): Promise<void> => {
-    if (!qrData) return;
-
-    if (!bluetoothPrinter) {
-      await connectBluetooth();
-      if (!bluetoothPrinter) return;
-    }
-
-    try {
-      setIsLoading(true);
-      setStatus({ type: '', message: 'Preparando impresión...' });
-
-      // Obtener imagen base64
-      let base64Image = qrData.qr_url;
-      if (!qrData.qr_url.startsWith('data:')) {
-        const response = await fetch(qrData.qr_url, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const blob = await response.blob();
-        base64Image = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.readAsDataURL(blob);
-        });
       }
 
-      // === SECUENCIA DE COMANDOS CORREGIDA ===
-      
-      // 1. Inicializar impresora
-      await sendCommand(new Uint8Array([0x1B, 0x40])); // ESC @ (Reset)
-      await new Promise(r => setTimeout(r, 100));
+      // Convertir bitmap a hexadecimal para TSPL
+      const hexData = bitmapData.map(b => 
+        b.toString(16).padStart(2, '0').toUpperCase()
+      ).join('');
 
-      // 2. Configurar modo de etiqueta
-      await sendCommand(new Uint8Array([0x1B, 0x69, 0x61, 0x01])); // Habilitar modo etiqueta
-      
-      // 3. Configurar tamaño de etiqueta (25mm altura = 200 dots a 203 DPI)
-      const labelHeightDots = 200;
-      await sendCommand(new Uint8Array([
-        0x1B, 0x69, 0x7A,              // Comando tamaño etiqueta
-        (labelHeightDots >> 0) & 0xFF,  // Altura baja
-        (labelHeightDots >> 8) & 0xFF   // Altura alta
-      ]));
+      // Construir comandos TSPL
+      const tspl = `SIZE 50 mm,25 mm
+GAP 2 mm,0 mm
+DIRECTION 1
+CLS
+BITMAP 0,0,${bytesPerLine},${labelHeightDots},1,${hexData}
+PRINT 1,1
+`;
 
-      // 4. Centrar alineación
-      await sendCommand(new Uint8Array([0x1B, 0x61, 0x01])); // ESC a 1 (Centrar)
+      resolve(tspl);
+    };
+    img.src = base64;
+  });
+};
 
-      // 5. Generar e imprimir imagen del QR
-      const imageCommands = await imageToEscPosBitmap(base64Image, 200); // QR de 200px
-      for (const cmd of imageCommands) {
-        await sendCommand(cmd);
-      }
+// =====================
+// Enviar comandos TSPL
+// =====================
+const sendTSPLCommands = async (tsplString: string): Promise<void> => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(tsplString);
+  
+  // Enviar en chunks de 512 bytes para Bluetooth
+  const chunkSize = 512;
+  for (let i = 0; i < data.length; i += chunkSize) {
+    const chunk = data.slice(i, Math.min(i + chunkSize, data.length));
+    await bluetoothPrinter!.characteristic.writeValue(chunk);
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+};
 
-      // 6. Avanzar para separar etiquetas
-      await sendCommand(new Uint8Array([0x1B, 0x64, 0x03])); // ESC d 3 (3 líneas)
-
-      // 7. Corte parcial (si la impresora lo soporta)
-      await sendCommand(new Uint8Array([0x1D, 0x56, 0x01])); // GS V 1 (Corte parcial)
-
-      setStatus({ type: 'success', message: 'Etiqueta QR impresa correctamente' });
-    } catch (error) {
-      setStatus({ type: 'error', message: 'Error al imprimir: ' + (error as Error).message });
-      console.error('Print error:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // =====================
-  // IMPRIMIR MÚLTIPLES ETIQUETAS
-  // =====================
-  const printMultipleStickers = async (quantity: number = 1): Promise<void> => {
-    if (quantity < 1 || quantity > 10) {
-      setStatus({ type: 'error', message: 'Cantidad debe estar entre 1 y 10' });
-      return;
-    }
+// =====================
+// Imprimir múltiples etiquetas
+// =====================
+const printMultipleStickers = async (quantity: number = 1): Promise<void> => {
+  if (quantity < 1 || quantity > 5) {
+    throw new Error('Cantidad debe estar entre 1 y 5 para pegatinas');
+  }
+  
+  for (let i = 0; i < quantity; i++) {
+    await printQR();
     
-    for (let i = 0; i < quantity; i++) {
-      setStatus({ type: '', message: `Imprimiendo ${i + 1} de ${quantity}...` });
-      await printQR();
-      
-      if (i < quantity - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
+    if (i < quantity - 1) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
+  }
+  
+  setStatus({ type: 'success', message: `${quantity} pegatina(s) impresas exitosamente` });
+};
+
+// =====================
+// Prueba simple de conexión
+// =====================
+const testPrinterConnection = async (): Promise<void> => {
+  if (!bluetoothPrinter?.characteristic) {
+    throw new Error('Impresora no conectada');
+  }
+  
+  try {
+    const testLabel = `SIZE 50 mm,25 mm
+GAP 2 mm,0 mm
+DIRECTION 1
+CLS
+TEXT 80,80,"3",0,1,1,"TEST OK"
+TEXT 60,120,"2",0,1,1,"PEGATINA"
+PRINT 1,1
+`;
     
-    setStatus({ type: 'success', message: `${quantity} etiqueta(s) impresas exitosamente` });
-  };
-
-  // =====================
-  // PRUEBA DE IMPRESORA
-  // =====================
-  const testPrinterConnection = async (): Promise<void> => {
-    if (!bluetoothPrinter?.characteristic) {
-      await connectBluetooth();
-      if (!bluetoothPrinter) return;
-    }
-    
-    try {
-      setIsLoading(true);
-      
-      // Reset
-      await sendCommand(new Uint8Array([0x1B, 0x40]));
-      await new Promise(r => setTimeout(r, 100));
-      
-      // Texto de prueba
-      const testText = 'PRUEBA IMPRESORA OK\n\n';
-      const encoder = new TextEncoder();
-      await sendCommand(encoder.encode(testText));
-      
-      // Corte
-      await sendCommand(new Uint8Array([0x1D, 0x56, 0x01]));
-      
-      setStatus({ type: 'success', message: 'Prueba de impresora exitosa' });
-    } catch (error) {
-      setStatus({ type: 'error', message: 'Fallo en prueba de impresora' });
-      console.error(error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const downloadQR = async (): Promise<void> => {
-    if (!qrData || !qrData.qr_url) return;
-
-    try {
-      if (qrData.qr_url.startsWith('data:')) {
-        const link = document.createElement('a');
-        link.download = `QR_${qrData.name}_${Date.now()}.png`;
-        link.href = qrData.qr_url;
-        link.click();
-        return;
-      }
-
-      const response = await fetch(qrData.qr_url, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch QR image');
-      }
-      
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.download = `QR_${qrData.name}_${Date.now()}.png`;
-      link.href = url;
-      link.click();
-      
-      URL.revokeObjectURL(url);
-      
-      setStatus({ type: 'success', message: 'QR descargado exitosamente' });
-    } catch (error) {
-      console.error('Error downloading QR:', error);
-      setStatus({ type: 'error', message: 'Error al descargar el QR' });
-    }
-  };
+    await sendTSPLCommands(testLabel);
+    setStatus({ type: 'success', message: 'Prueba de impresora exitosa' });
+  } catch (error) {
+    throw new Error('Fallo en prueba de impresora');
+  }
+};
 
   const resetForm = (): void => {
-    cleanupCamera();
+    cleanupCamera(); // Clean up camera before resetting
     setCurrentStep('camera');
     setCapturedImage(null);
     setQrData(null);
@@ -738,14 +656,14 @@ const AssetCreatorFAB: React.FC = () => {
   };
 
   const handleClose = (): void => {
-    cleanupCamera();
+    cleanupCamera(); // Properly clean up camera
     setIsExpanded(false);
     resetForm();
   };
 
   const handleStepBack = (): void => {
     if (currentStep === 'form') {
-      cleanupCamera();
+      cleanupCamera(); // Clean up when going back to camera
       setCurrentStep('camera');
     }
   };
@@ -772,9 +690,50 @@ const AssetCreatorFAB: React.FC = () => {
       </div>
     );
   };
+  const downloadQR = async (): Promise<void> => {
+    if (!qrData || !qrData.qr_url) return;
 
+    try {
+      // If it's already a data URL, use it directly
+      if (qrData.qr_url.startsWith('data:')) {
+        const link = document.createElement('a');
+        link.download = `QR_${qrData.name}_${Date.now()}.png`;
+        link.href = qrData.qr_url;
+        link.click();
+        return;
+      }
+
+      // If it's a URL, fetch the image and convert to blob
+      const response = await fetch(qrData.qr_url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch QR image');
+      }
+      
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.download = `QR_${qrData.name}_${Date.now()}.png`;
+      link.href = url;
+      link.click();
+      
+      // Clean up the blob URL
+      URL.revokeObjectURL(url);
+      
+      setStatus({ type: 'success', message: 'QR descargado exitosamente' });
+    } catch (error) {
+      console.error('Error downloading QR:', error);
+      setStatus({ type: 'error', message: 'Error al descargar el QR' });
+    }
+  };
   return (
     <>
+      {/* Floating Action Button */}
       {!isExpanded && (
         <button
           onClick={() => setIsExpanded(true)}
@@ -784,9 +743,11 @@ const AssetCreatorFAB: React.FC = () => {
         </button>
       )}
 
+      {/* Expanded Modal */}
       {isExpanded && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end">
           <div className="bg-white w-full max-w-md mx-auto rounded-t-3xl shadow-2xl transform transition-transform duration-300 ease-out">
+            {/* Header */}
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-xl font-semibold text-gray-800">Crear Activo</h2>
               <button
@@ -800,8 +761,20 @@ const AssetCreatorFAB: React.FC = () => {
             <div className="p-4 max-h-[70vh] overflow-y-auto">
               <StatusIndicator />
 
+              {/* Camera Step */}
               {currentStep === 'camera' && (
                 <div className="space-y-4">
+                  <div className="relative">
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-64 object-cover rounded-lg bg-gray-900"
+                    />
+                    <canvas ref={canvasRef} className="hidden" />
+                  </div>
+
                   <div className="flex space-x-3">
                     <button
                       onClick={startCamera}
@@ -828,6 +801,7 @@ const AssetCreatorFAB: React.FC = () => {
                 </div>
               )}
 
+              {/* Form Step */}
               {currentStep === 'form' && (
                 <div className="space-y-4">
                   {capturedImage && (
@@ -961,7 +935,7 @@ const AssetCreatorFAB: React.FC = () => {
                       onChange={(e) => {
                         setSelectedSchool(e.target.value);
                         handleInputChange('school_id', e.target.value);
-                        handleInputChange('classroom_id', '');
+                        handleInputChange('classroom_id', ''); // Reset classroom
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
                     >
@@ -1016,6 +990,7 @@ const AssetCreatorFAB: React.FC = () => {
                 </div>
               )}
 
+              {/* QR Step */}
               {currentStep === 'qr' && qrData && (
                 <div className="space-y-4 text-center">
                   <div className="bg-green-50 p-4 rounded-lg">
@@ -1031,10 +1006,18 @@ const AssetCreatorFAB: React.FC = () => {
                           src={qrData.qr_url} 
                           alt="QR Code" 
                           className="w-full h-full object-contain"
+                          onError={(e) => {
+                            console.error('Error loading QR image:', qrData.qr_url);
+                            e.currentTarget.style.display = 'none';
+                            (e.currentTarget.nextElementSibling as HTMLElement)!.style.display = 'flex';
+                          }}
                         />
-                      ) : (
-                        <span className="text-xs text-gray-500">QR no disponible</span>
-                      )}
+                      ) : null}
+                      <div className="w-full h-full flex items-center justify-center" style={{display: qrData.qr_url ? 'none' : 'flex'}}>
+                        <span className="text-xs text-gray-500 text-center">
+                          {qrData.qr_url ? 'Cargando QR...' : 'QR no disponible'}
+                        </span>
+                      </div>
                     </div>
                     <h4 className="font-medium">{qrData.name}</h4>
                     <p className="text-sm text-gray-600">{qrData.school} - {qrData.classroom}</p>
@@ -1042,29 +1025,21 @@ const AssetCreatorFAB: React.FC = () => {
 
                   <div className="space-y-3">
                     <button
-                      onClick={() => printMultipleStickers(formData.quantity)}
+                      onClick={printQR}
                       disabled={isLoading}
-                      className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center hover:bg-blue-700"
+                      className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
                     >
                       {isLoading ? (
                         <Loader className="w-5 h-5 animate-spin mr-2" />
                       ) : (
                         <Printer className="w-5 h-5 mr-2" />
                       )}
-                      Imprimir {formData.quantity > 1 ? `${formData.quantity} Etiquetas` : 'Etiqueta'}
-                    </button>
-
-                    <button
-                      onClick={testPrinterConnection}
-                      disabled={isLoading}
-                      className="w-full bg-purple-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center hover:bg-purple-700"
-                    >
-                      Probar Impresora
+                      Imprimir QR
                     </button>
 
                     <button
                       onClick={downloadQR}
-                      className="w-full bg-gray-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center hover:bg-gray-700"
+                      className="w-full bg-gray-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
                     >
                       <Download className="w-5 h-5 mr-2" />
                       Descargar QR
@@ -1072,7 +1047,7 @@ const AssetCreatorFAB: React.FC = () => {
 
                     <button
                       onClick={resetForm}
-                      className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700"
+                      className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium"
                     >
                       Crear Otro Activo
                     </button>
