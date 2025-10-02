@@ -457,12 +457,6 @@ const AssetCreatorFAB: React.FC = () => {
 // =====================
 // Función principal
 // =====================
-// =====================
-// Función principal
-// =====================
-// =====================
-// Imprimir etiqueta QR con TSPL
-// =====================
 const printQR = async (): Promise<void> => {
   if (!qrData) return;
 
@@ -518,10 +512,16 @@ const generateTSPLSticker = async (base64: string): Promise<string> => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
 
-        // Dimensiones optimizadas: 50mm = ~394px @ 200dpi, 25mm = ~197px
-        const labelWidthDots = 384; // Múltiplo de 8 para facilitar conversión
+        // Dimensiones: 50mm x 25mm @ 203dpi
+        // 203dpi * 50mm / 25.4 = 399 dots de ancho
+        // 203dpi * 25mm / 25.4 = 200 dots de alto
+        const labelWidthDots = 400; // Ajustado a múltiplo conveniente
         const labelHeightDots = 200;
-        const qrSize = 180; // QR más grande para mejor lectura
+        
+        // QR ocupa la mitad izquierda (190x190 para que quepa con margen)
+        const qrSize = 190;
+        const qrX = 5; // Pequeño margen izquierdo
+        const qrY = 5; // Centrado verticalmente
 
         canvas.width = labelWidthDots;
         canvas.height = labelHeightDots;
@@ -532,22 +532,18 @@ const generateTSPLSticker = async (base64: string): Promise<string> => {
         ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Centrar QR con margen
-        const xOffset = (canvas.width - qrSize) / 2;
-        const yOffset = (canvas.height - qrSize) / 2;
-        
-        // Dibujar QR con antialiasing desactivado para mejor contraste
+        // Dibujar QR (sin antialiasing para mejor contraste)
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(img, xOffset, yOffset, qrSize, qrSize);
+        ctx.drawImage(img, qrX, qrY, qrSize, qrSize);
 
-        // Convertir a bitmap monocromo con umbral ajustado
+        // Convertir a bitmap monocromo
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const bytesPerLine = canvas.width / 8; // Ahora es entero
+        const bytesPerLine = Math.ceil(canvas.width / 8);
         const totalBytes = bytesPerLine * canvas.height;
         const bitmapData = new Uint8Array(totalBytes);
 
-        // Umbral más alto para mejor contraste (180 en lugar de 128)
-        const threshold = 180;
+        // Umbral para binarización (128 = punto medio)
+        const threshold = 128;
 
         for (let y = 0; y < canvas.height; y++) {
           for (let x = 0; x < canvas.width; x++) {
@@ -559,27 +555,35 @@ const generateTSPLSticker = async (base64: string): Promise<string> => {
             const b = imageData.data[pixelIndex + 2];
             const gray = 0.299 * r + 0.587 * g + 0.114 * b;
             
-            // Si el pixel es oscuro (por debajo del umbral), marcarlo como negro
+            // CORREGIDO: Si el pixel es CLARO (por encima del umbral), dejarlo blanco (0)
+            // Si es OSCURO (por debajo), marcarlo negro (1)
             if (gray < threshold) {
               const byteIndex = y * bytesPerLine + Math.floor(x / 8);
-              const bitIndex = 7 - (x % 8); // MSB primero
+              const bitIndex = 7 - (x % 8);
               bitmapData[byteIndex] |= (1 << bitIndex);
             }
           }
         }
 
-        // Convertir a hexadecimal con formato correcto
+        // Convertir a hexadecimal
         let hexData = '';
         for (let i = 0; i < bitmapData.length; i++) {
           hexData += bitmapData[i].toString(16).padStart(2, '0').toUpperCase();
         }
 
-        // Construir comandos TSPL con sintaxis correcta
+        // Obtener información del aula
+        const aulaInfo = qrData?.classroom || 'AULA';
+        const itemInfo = qrData?.name || '';
+
+        // Construir comandos TSPL
         const tspl = `SIZE 50 mm, 25 mm
 GAP 2 mm, 0 mm
 DIRECTION 1
+DENSITY 8
 CLS
-BITMAP 0,10,${bytesPerLine},${labelHeightDots},1,${hexData}
+BITMAP 0,5,${bytesPerLine},${labelHeightDots},1,${hexData}
+TEXT 210,20,"3",0,1,1,"${aulaInfo}"
+TEXT 210,60,"2",0,1,1,"${itemInfo.substring(0, 15)}"
 PRINT 1
 `;
 
@@ -588,7 +592,8 @@ PRINT 1
           height: labelHeightDots,
           bytesPerLine,
           totalBytes,
-          hexLength: hexData.length
+          hexLength: hexData.length,
+          aula: aulaInfo
         });
 
         resolve(tspl);
@@ -605,16 +610,29 @@ PRINT 1
 // Enviar comandos TSPL
 // =====================
 const sendTSPLCommands = async (tsplString: string): Promise<void> => {
+  if (!bluetoothPrinter?.characteristic) {
+    throw new Error('Impresora Bluetooth no conectada');
+  }
+
   const encoder = new TextEncoder();
   const data = encoder.encode(tsplString);
   
-  // Enviar en chunks de 512 bytes para Bluetooth
+  console.log('Enviando comandos TSPL:', {
+    totalBytes: data.length,
+    commands: tsplString.split('\n').map(cmd => cmd.substring(0, 50))
+  });
+  
+  // Enviar en chunks de 512 bytes
   const chunkSize = 512;
   for (let i = 0; i < data.length; i += chunkSize) {
     const chunk = data.slice(i, Math.min(i + chunkSize, data.length));
-    await bluetoothPrinter!.characteristic.writeValue(chunk);
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await bluetoothPrinter.characteristic.writeValue(chunk);
+    // Pequeña pausa entre chunks
+    await new Promise(resolve => setTimeout(resolve, 100));
   }
+  
+  // Pausa final para que la impresora procese
+  await new Promise(resolve => setTimeout(resolve, 500));
 };
 
 // =====================
@@ -622,19 +640,71 @@ const sendTSPLCommands = async (tsplString: string): Promise<void> => {
 // =====================
 const printMultipleStickers = async (quantity: number = 1): Promise<void> => {
   if (quantity < 1 || quantity > 5) {
-    throw new Error('Cantidad debe estar entre 1 y 5 para pegatinas');
+    throw new Error('Cantidad debe estar entre 1 y 5');
   }
   
-  for (let i = 0; i < quantity; i++) {
-    await printQR();
+  try {
+    setIsLoading(true);
     
-    if (i < quantity - 1) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    for (let i = 0; i < quantity; i++) {
+      await printQR();
+      
+      // Pausa entre etiquetas (excepto en la última)
+      if (i < quantity - 1) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
     }
+    
+    setStatus({ 
+      type: 'success', 
+      message: `${quantity} etiqueta${quantity > 1 ? 's' : ''} impresa${quantity > 1 ? 's' : ''} correctamente` 
+    });
+  } catch (error) {
+    setStatus({ 
+      type: 'error', 
+      message: `Error al imprimir etiquetas: ${error instanceof Error ? error.message : 'Error desconocido'}` 
+    });
+    throw error;
+  } finally {
+    setIsLoading(false);
   }
-  
-  setStatus({ type: 'success', message: `${quantity} pegatina(s) impresas exitosamente` });
 };
+
+// =====================
+// Función auxiliar: Probar impresión de texto simple
+// =====================
+const testPrint = async (): Promise<void> => {
+  if (!bluetoothPrinter) {
+    await connectBluetooth();
+    if (!bluetoothPrinter) return;
+  }
+
+  try {
+    setIsLoading(true);
+    
+    const testTSPL = `SIZE 50 mm, 25 mm
+GAP 2 mm, 0 mm
+DIRECTION 1
+DENSITY 8
+CLS
+TEXT 50,50,"4",0,1,1,"PRUEBA"
+TEXT 50,100,"3",0,1,1,"Etiqueta OK"
+PRINT 1
+`;
+    
+    await sendTSPLCommands(testTSPL);
+    setStatus({ type: 'success', message: 'Impresión de prueba enviada' });
+  } catch (error) {
+    setStatus({ type: 'error', message: 'Error en prueba de impresión' });
+    console.error('Test print error:', error);
+  } finally {
+    setIsLoading(false);
+  }
+};
+// =====================
+// Enviar comandos TSPL
+// =====================
+
 
 // =====================
 // Prueba simple de conexión
