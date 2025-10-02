@@ -500,39 +500,40 @@ const printQR = async (): Promise<void> => {
 // =====================
 // Generar comandos TSPL para etiqueta completa
 // =====================
+// =====================
+// Generar comandos TSPL para etiqueta 50x25mm
+// =====================
 const generateTSPLSticker = async (base64: string): Promise<string> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    
+
     img.onerror = () => reject(new Error('Error al cargar imagen QR'));
-    
+
     img.onload = () => {
       try {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
 
-        // Dimensiones: 50mm x 25mm @ 203dpi
-        // 203dpi * 50mm / 25.4 = 399 dots de ancho
-        // 203dpi * 25mm / 25.4 = 200 dots de alto
-        const labelWidthDots = 400; // Ajustado a múltiplo conveniente
-        const labelHeightDots = 200;
-        
-        // QR ocupa la mitad izquierda (190x190 para que quepa con margen)
-        const qrSize = 190;
-        const qrX = 5; // Pequeño margen izquierdo
-        const qrY = 5; // Centrado verticalmente
+        // Medidas reales de la etiqueta a 203 dpi
+        const labelWidthDots = 400; // 50 mm
+        const labelHeightDots = 200; // 25 mm
+
+        // QR cuadrado de 200x200
+        const qrSize = 200;
+        const qrX = 10; // margen izquierdo
+        const qrY = 0;  // margen superior
 
         canvas.width = labelWidthDots;
         canvas.height = labelHeightDots;
 
         if (!ctx) return reject(new Error('No se pudo obtener contexto 2D'));
 
-        // Fondo blanco completo
+        // Fondo blanco
         ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Dibujar QR (sin antialiasing para mejor contraste)
+        // Dibujar QR (sin suavizado)
         ctx.imageSmoothingEnabled = false;
         ctx.drawImage(img, qrX, qrY, qrSize, qrSize);
 
@@ -542,21 +543,17 @@ const generateTSPLSticker = async (base64: string): Promise<string> => {
         const totalBytes = bytesPerLine * canvas.height;
         const bitmapData = new Uint8Array(totalBytes);
 
-        // Umbral para binarización (128 = punto medio)
-        const threshold = 128;
+        // Threshold más alto para contraste
+        const threshold = 160;
 
         for (let y = 0; y < canvas.height; y++) {
           for (let x = 0; x < canvas.width; x++) {
             const pixelIndex = (y * canvas.width + x) * 4;
-            
-            // Calcular luminosidad
             const r = imageData.data[pixelIndex];
             const g = imageData.data[pixelIndex + 1];
             const b = imageData.data[pixelIndex + 2];
             const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-            
-            // CORREGIDO: Si el pixel es CLARO (por encima del umbral), dejarlo blanco (0)
-            // Si es OSCURO (por debajo), marcarlo negro (1)
+
             if (gray < threshold) {
               const byteIndex = y * bytesPerLine + Math.floor(x / 8);
               const bitIndex = 7 - (x % 8);
@@ -565,46 +562,38 @@ const generateTSPLSticker = async (base64: string): Promise<string> => {
           }
         }
 
-        // Convertir a hexadecimal
+        // Pasar a HEX
         let hexData = '';
         for (let i = 0; i < bitmapData.length; i++) {
           hexData += bitmapData[i].toString(16).padStart(2, '0').toUpperCase();
         }
 
-        // Obtener información del aula
+        // Info de la etiqueta
         const aulaInfo = qrData?.classroom || 'AULA';
         const itemInfo = qrData?.name || '';
 
-        // Construir comandos TSPL
-        const tspl = `SIZE 50 mm, 25 mm
-GAP 2 mm, 0 mm
+        // Construir TSPL
+        const tspl = `SIZE 50 mm,25 mm
+GAP 2 mm,0 mm
 DIRECTION 1
 DENSITY 8
 CLS
-BITMAP 0,5,${bytesPerLine},${labelHeightDots},1,${hexData}
-TEXT 210,20,"3",0,1,1,"${aulaInfo}"
-TEXT 210,60,"2",0,1,1,"${itemInfo.substring(0, 15)}"
+BITMAP 20,0,${bytesPerLine},${labelHeightDots},1,${hexData}
+TEXT 230,40,"3",0,1,1,"${aulaInfo}"
+TEXT 230,90,"2",0,1,1,"${itemInfo.substring(0, 15)}"
 PRINT 1
 `;
-
-        console.log('TSPL generado:', {
-          width: labelWidthDots,
-          height: labelHeightDots,
-          bytesPerLine,
-          totalBytes,
-          hexLength: hexData.length,
-          aula: aulaInfo
-        });
 
         resolve(tspl);
       } catch (error) {
         reject(error);
       }
     };
-    
+
     img.src = base64;
   });
 };
+
 
 // =====================
 // Enviar comandos TSPL
