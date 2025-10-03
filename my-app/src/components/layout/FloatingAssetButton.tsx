@@ -457,28 +457,85 @@ const AssetCreatorFAB: React.FC = () => {
 
   const generateTSPLSticker = (data: QRData): string => {
     const assetUrl = data.asset_url || `${BASE_APP_URL}/assets/${data.asset_id}`;
-    const aulaInfo = (data.classroom || "AULA").substring(0, 15);
-    const itemInfo = (data.name || "").substring(0, 18);
+    const aulaInfo = data.classroom || "AULA";
+    const itemInfo = data.name || "";
     const assetId = `ID: ${data.asset_id.substring(0, 8)}`;
+
+    // Calcular tamaño de fuente según longitud del texto
+    const getTextSize = (text: string, maxChars: number, maxSize: number): number => {
+      if (text.length <= maxChars) return maxSize;
+      if (text.length <= maxChars * 1.5) return maxSize - 1;
+      return Math.max(1, maxSize - 2);
+    };
+
+    // Función para dividir texto largo en múltiples líneas
+    const splitText = (text: string, maxCharsPerLine: number): string[] => {
+      if (text.length <= maxCharsPerLine) return [text];
+      
+      const words = text.split(' ');
+      const lines: string[] = [];
+      let currentLine = '';
+
+      words.forEach(word => {
+        if ((currentLine + ' ' + word).trim().length <= maxCharsPerLine) {
+          currentLine = (currentLine + ' ' + word).trim();
+        } else {
+          if (currentLine) lines.push(currentLine);
+          currentLine = word;
+        }
+      });
+      
+      if (currentLine) lines.push(currentLine);
+      return lines.slice(0, 2); // Máximo 2 líneas
+    };
+
+    // Configuración del aula
+    const aulaSize = getTextSize(aulaInfo, 12, 3);
+    const aulaLines = splitText(aulaInfo, 15);
+    
+    // Configuración del nombre del item
+    const itemSize = getTextSize(itemInfo, 15, 2);
+    const itemLines = splitText(itemInfo, 20);
 
     console.log('Generando etiqueta con:', {
       assetUrl,
       aulaInfo,
       itemInfo,
-      assetId
+      assetId,
+      aulaSize,
+      itemSize,
+      aulaLines,
+      itemLines
     });
 
-    return `SIZE 50 mm,25 mm
+    // Generar comandos TSPL
+    let tspl = `SIZE 50 mm,25 mm
 GAP 2 mm,0
 DIRECTION 1
 DENSITY 8
 CLS
-QRCODE 10,20,M,5,A,0,M2,S7,"${assetUrl}"
-TEXT 180,20,"3",0,1,1,"${aulaInfo}"
-TEXT 180,65,"2",0,1,1,"${itemInfo}"
-TEXT 180,105,"1",0,1,1,"${assetId}"
-PRINT 1
+QRCODE 15,30,M,4,A,0,M2,S7,"${assetUrl}"
 `;
+
+    // Agregar texto del aula (con posible segunda línea)
+    let yPos = 25;
+    aulaLines.forEach((line, index) => {
+      tspl += `TEXT 155,${yPos + (index * 40)},"${aulaSize}",0,1,1,"${line}"\n`;
+    });
+
+    // Agregar texto del nombre (con posible segunda línea)
+    yPos = aulaLines.length > 1 ? 105 : 75;
+    itemLines.forEach((line, index) => {
+      tspl += `TEXT 155,${yPos + (index * 35)},"${itemSize}",0,1,1,"${line}"\n`;
+    });
+
+    // Agregar ID en la parte inferior
+    yPos = itemLines.length > 1 ? 175 : (aulaLines.length > 1 ? 155 : 140);
+    tspl += `TEXT 155,${yPos},"1",0,1,1,"${assetId}"\n`;
+
+    tspl += `PRINT 1\n`;
+
+    return tspl;
   };
 
   const sendTSPLCommands = async (tsplString: string): Promise<void> => {
