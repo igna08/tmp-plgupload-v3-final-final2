@@ -509,6 +509,8 @@ const AssetCreatorFAB: React.FC = () => {
     });
 
     // Generar comandos TSPL
+    // La etiqueta de 50mm son ~394 dots a 200dpi
+    // Dividimos en dos mitades: QR en izquierda (0-197), texto en derecha (197-394)
     let tspl = `SIZE 50 mm,25 mm
 GAP 2 mm,0
 DIRECTION 1
@@ -517,21 +519,24 @@ CLS
 QRCODE 15,30,M,4,A,0,M2,S7,"${assetUrl}"
 `;
 
+    // Texto comienza en la mitad derecha (197 dots + margen de 10 = 207)
+    const textStartX = 207;
+
     // Agregar texto del aula (con posible segunda línea)
     let yPos = 25;
     aulaLines.forEach((line, index) => {
-      tspl += `TEXT 155,${yPos + (index * 40)},"${aulaSize}",0,1,1,"${line}"\n`;
+      tspl += `TEXT ${textStartX},${yPos + (index * 40)},"${aulaSize}",0,1,1,"${line}"\n`;
     });
 
     // Agregar texto del nombre (con posible segunda línea)
     yPos = aulaLines.length > 1 ? 105 : 75;
     itemLines.forEach((line, index) => {
-      tspl += `TEXT 155,${yPos + (index * 35)},"${itemSize}",0,1,1,"${line}"\n`;
+      tspl += `TEXT ${textStartX},${yPos + (index * 35)},"${itemSize}",0,1,1,"${line}"\n`;
     });
 
     // Agregar ID en la parte inferior
     yPos = itemLines.length > 1 ? 175 : (aulaLines.length > 1 ? 155 : 140);
-    tspl += `TEXT 155,${yPos},"1",0,1,1,"${assetId}"\n`;
+    tspl += `TEXT ${textStartX},${yPos},"1",0,1,1,"${assetId}"\n`;
 
     tspl += `PRINT 1\n`;
 
