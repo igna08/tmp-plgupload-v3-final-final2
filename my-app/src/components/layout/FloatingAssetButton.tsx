@@ -47,14 +47,11 @@ interface Classroom {
 }
 
 interface FormData {
-  name: string;
   price: string;
   quantity: number;
   school_id: string;
   classroom_id: string;
   template_id: string;
-  use_existing_template: boolean;
-  category_id: string;
 }
 
 interface QRData {
@@ -94,14 +91,11 @@ const AssetCreatorFAB: React.FC = () => {
   const [qrData, setQrData] = useState<QRData | null>(null);
   const [status, setStatus] = useState<StatusState>({ type: '', message: '' });
   const [formData, setFormData] = useState<FormData>({
-    name: '',
     price: '',
     quantity: 1,
     school_id: '',
     classroom_id: '',
-    template_id: '',
-    use_existing_template: true,
-    category_id: ''
+    template_id: ''
   });
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -288,7 +282,7 @@ const AssetCreatorFAB: React.FC = () => {
     setStatus({ type: 'success', message: 'Foto capturada exitosamente' });
   };
 
-  const handleInputChange = (field: keyof FormData, value: string | number | boolean): void => {
+  const handleInputChange = (field: keyof FormData, value: string | number): void => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -297,8 +291,8 @@ const AssetCreatorFAB: React.FC = () => {
       setStatus({ type: 'error', message: 'Por favor capture una foto del objeto' });
       return false;
     }
-    if (!formData.name.trim()) {
-      setStatus({ type: 'error', message: 'El nombre es obligatorio' });
+    if (!formData.template_id) {
+      setStatus({ type: 'error', message: 'Seleccione una plantilla' });
       return false;
     }
     if (!formData.school_id) {
@@ -309,12 +303,8 @@ const AssetCreatorFAB: React.FC = () => {
       setStatus({ type: 'error', message: 'Seleccione un aula' });
       return false;
     }
-    if (formData.use_existing_template && !formData.template_id) {
-      setStatus({ type: 'error', message: 'Seleccione una plantilla existente o elija crear nueva' });
-      return false;
-    }
-    if (!formData.use_existing_template && !formData.category_id) {
-      setStatus({ type: 'error', message: 'Seleccione una categoría para la nueva plantilla' });
+    if (formData.quantity < 1 || formData.quantity > 50) {
+      setStatus({ type: 'error', message: 'La cantidad debe estar entre 1 y 50' });
       return false;
     }
     return true;
@@ -325,85 +315,85 @@ const AssetCreatorFAB: React.FC = () => {
 
     setIsLoading(true);
     try {
-      let templateId = formData.template_id;
+      const createdAssets: QRData[] = [];
+      const selectedTemplate = templates.find(t => t.id === formData.template_id);
+      const selectedSchoolData = schools.find(s => s.id === formData.school_id);
+      const selectedClassroomData = classrooms.find(c => c.id === formData.classroom_id);
 
-      if (!formData.use_existing_template) {
-        const templateResponse = await fetch(`${API_BASE_URL}/assets/templates/`, {
+      // Crear múltiples activos según la cantidad
+      for (let i = 0; i < formData.quantity; i++) {
+        setStatus({ 
+          type: 'success', 
+          message: `Creando activo ${i + 1} de ${formData.quantity}...` 
+        });
+
+        // Crear el activo
+        const assetResponse = await fetch(`${API_BASE_URL}/assets/`, {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`,
           },
           body: JSON.stringify({
-            name: formData.name,
-            description: `Asset template created via mobile app`,
-            manufacturer: 'Generic',
-            model_number: 'N/A',
-            category_id: formData.category_id || null
+            template_id: formData.template_id,
+            serial_number: `SA-${Date.now()}-${i}`,
+            purchase_date: new Date().toISOString().split('T')[0],
+            value_estimate: parseFloat(formData.price) || 0,
+            image_url: capturedImage,
+            status: 'available',
+            classroom_id: formData.classroom_id
           })
         });
 
-        if (!templateResponse.ok) {
-          throw new Error(`Template creation failed with status: ${templateResponse.status}`);
+        if (!assetResponse.ok) {
+          throw new Error(`Asset creation failed with status: ${assetResponse.status}`);
         }
-        const template = await templateResponse.json();
-        templateId = template.id;
+        const asset = await assetResponse.json();
+
+        // Generar QR para el activo
+        const qrResponse = await fetch(`${API_BASE_URL}/assets/${asset.id}/qr-codes/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        if (!qrResponse.ok) {
+          throw new Error(`QR generation failed with status: ${qrResponse.status}`);
+        }
+        const qr = await qrResponse.json();
+
+        const assetUrl = `${BASE_APP_URL}/assets/${asset.id}`;
+
+        createdAssets.push({
+          asset_id: asset.id,
+          qr_url: qr.qr_url,
+          name: selectedTemplate?.name || 'Activo',
+          school: selectedSchoolData?.name || '',
+          classroom: selectedClassroomData?.name || '',
+          asset_url: assetUrl
+        });
+
+        // Pequeña pausa entre creaciones
+        if (i < formData.quantity - 1) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
       }
 
-      const assetResponse = await fetch(`${API_BASE_URL}/assets/`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          template_id: templateId,
-          serial_number: `SA-${Date.now()}`,
-          purchase_date: new Date().toISOString().split('T')[0],
-          value_estimate: parseFloat(formData.price) || 0,
-          image_url: capturedImage,
-          status: 'available',
-          classroom_id: formData.classroom_id
-        })
-      });
-
-      if (!assetResponse.ok) {
-        throw new Error(`Asset creation failed with status: ${assetResponse.status}`);
-      }
-      const asset = await assetResponse.json();
-
-      const qrResponse = await fetch(`${API_BASE_URL}/assets/${asset.id}/qr-codes/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!qrResponse.ok) {
-        throw new Error(`QR generation failed with status: ${qrResponse.status}`);
-      }
-      const qr = await qrResponse.json();
-
-      const selectedSchoolData = schools.find(s => s.id === formData.school_id);
-      const selectedClassroomData = classrooms.find(c => c.id === formData.classroom_id);
-
-      const assetUrl = `${BASE_APP_URL}/assets/${asset.id}`;
-
-      setQrData({
-        asset_id: asset.id,
-        qr_url: qr.qr_url,
-        name: formData.name,
-        school: selectedSchoolData?.name || '',
-        classroom: selectedClassroomData?.name || '',
-        asset_url: assetUrl
-      });
+      // Guardar todos los activos creados para impresión
+      setQrData(createdAssets[0]); // Mostrar el primero
+      // Guardar todos en el estado para impresión posterior
+      (window as any).createdAssets = createdAssets;
 
       setCurrentStep('qr');
-      setStatus({ type: 'success', message: '¡Activo creado exitosamente!' });
+      setStatus({ 
+        type: 'success', 
+        message: `¡${formData.quantity} activo${formData.quantity > 1 ? 's' : ''} creado${formData.quantity > 1 ? 's' : ''} exitosamente!` 
+      });
     } catch (error) {
-      setStatus({ type: 'error', message: 'Error al crear el activo' });
-      console.error('Error creating asset:', error);
+      setStatus({ type: 'error', message: 'Error al crear los activos' });
+      console.error('Error creating assets:', error);
     } finally {
       setIsLoading(false);
     }
@@ -429,27 +419,6 @@ const AssetCreatorFAB: React.FC = () => {
     } catch (error) {
       setStatus({ type: 'error', message: 'Error al conectar con la impresora' });
       console.error('Bluetooth error:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const printQR = async (): Promise<void> => {
-    if (!qrData) return;
-
-    if (!bluetoothPrinter) {
-      await connectBluetooth();
-      if (!bluetoothPrinter) return;
-    }
-
-    try {
-      setIsLoading(true);
-      const tsplCommands = generateTSPLSticker(qrData);
-      await sendTSPLCommands(tsplCommands);
-      setStatus({ type: 'success', message: 'Etiqueta QR impresa correctamente' });
-    } catch (error) {
-      setStatus({ type: 'error', message: 'Error al imprimir etiqueta QR' });
-      console.error('Print error:', error);
     } finally {
       setIsLoading(false);
     }
@@ -566,21 +535,40 @@ QRCODE 15,30,M,4,A,0,M2,S7,"${assetUrl}"
     await new Promise(resolve => setTimeout(resolve, 500));
   };
 
-  const printMultipleStickers = async (quantity: number = 1): Promise<void> => {
-    if (quantity < 1 || quantity > 5) {
-      throw new Error('Cantidad debe estar entre 1 y 5');
+  const printMultipleStickers = async (): Promise<void> => {
+    const assetsToPrint = (window as any).createdAssets as QRData[] || [qrData];
+    
+    if (assetsToPrint.length === 0 || !assetsToPrint[0]) {
+      throw new Error('No hay activos para imprimir');
+    }
+
+    if (!bluetoothPrinter) {
+      await connectBluetooth();
+      if (!bluetoothPrinter) return;
     }
 
     try {
       setIsLoading(true);
-      for (let i = 0; i < quantity; i++) {
-        await printQR();
-        if (i < quantity - 1) await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      for (let i = 0; i < assetsToPrint.length; i++) {
+        const asset = assetsToPrint[i];
+        setStatus({
+          type: 'success',
+          message: `Imprimiendo etiqueta ${i + 1} de ${assetsToPrint.length}...`
+        });
+
+        const tsplCommands = generateTSPLSticker(asset);
+        await sendTSPLCommands(tsplCommands);
+        
+        // Pausa entre impresiones
+        if (i < assetsToPrint.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
       }
 
       setStatus({
         type: 'success',
-        message: `${quantity} etiqueta${quantity > 1 ? 's' : ''} impresa${quantity > 1 ? 's' : ''} correctamente`
+        message: `${assetsToPrint.length} etiqueta${assetsToPrint.length > 1 ? 's' : ''} impresa${assetsToPrint.length > 1 ? 's' : ''} correctamente`
       });
     } catch (error) {
       setStatus({
@@ -647,15 +635,13 @@ PRINT 1,1
     setCurrentStep('camera');
     setCapturedImage(null);
     setQrData(null);
+    (window as any).createdAssets = null;
     setFormData({
-      name: '',
       price: '',
       quantity: 1,
       school_id: '',
       classroom_id: '',
-      template_id: '',
-      use_existing_template: true,
-      category_id: ''
+      template_id: ''
     });
     setSelectedSchool('');
     setClassrooms([]);
@@ -817,20 +803,7 @@ PRINT 1,1
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Nombre del objeto *
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.name}
-                      onChange={(e) => handleInputChange('name', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
-                      placeholder="Ingrese el nombre"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Precio estimado
+                      Precio estimado (unitario)
                     </label>
                     <input
                       type="number"
@@ -844,87 +817,19 @@ PRINT 1,1
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Cantidad
+                      Cantidad de activos a crear *
                     </label>
                     <input
                       type="number"
                       min="1"
+                      max="50"
                       value={formData.quantity}
                       onChange={(e) => handleInputChange('quantity', parseInt(e.target.value) || 1)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
                     />
-                  </div>
-
-                  <div className="border-t pt-4">
-                    <h3 className="text-sm font-medium text-gray-700 mb-3">Plantilla del Activo</h3>
-                    
-                    <div className="space-y-3">
-                      <div className="flex items-center space-x-3">
-                        <input
-                          type="radio"
-                          id="existing-template"
-                          name="template-choice"
-                          checked={formData.use_existing_template}
-                          onChange={() => handleInputChange('use_existing_template', true)}
-                          className="w-4 h-4 text-black focus:ring-black"
-                        />
-                        <label htmlFor="existing-template" className="text-sm text-gray-700">
-                          Usar plantilla existente
-                        </label>
-                      </div>
-                      
-                      <div className="flex items-center space-x-3">
-                        <input
-                          type="radio"
-                          id="new-template"
-                          name="template-choice"
-                          checked={!formData.use_existing_template}
-                          onChange={() => handleInputChange('use_existing_template', false)}
-                          className="w-4 h-4 text-black focus:ring-black"
-                        />
-                        <label htmlFor="new-template" className="text-sm text-gray-700">
-                          Crear nueva plantilla
-                        </label>
-                      </div>
-                    </div>
-
-                    {formData.use_existing_template ? (
-                      <div className="mt-3">
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                          Seleccionar plantilla *
-                        </label>
-                        <select
-                          value={formData.template_id}
-                          onChange={(e) => handleInputChange('template_id', e.target.value)}
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
-                        >
-                          <option value="">Seleccionar plantilla</option>
-                          {templates.map(template => (
-                            <option key={template.id} value={template.id}>
-                              {template.name} ({template.category?.name || 'Sin categoría'})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    ) : (
-                      <div className="mt-3">
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                          Categoría para nueva plantilla *
-                        </label>
-                        <select
-                          value={formData.category_id}
-                          onChange={(e) => handleInputChange('category_id', e.target.value)}
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
-                        >
-                          <option value="">Seleccionar categoría</option>
-                          {categories.map(category => (
-                            <option key={category.id} value={category.id}>
-                              {category.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
+                    <p className="text-xs text-gray-500 mt-1">
+                      Se crearán {formData.quantity} activo{formData.quantity > 1 ? 's' : ''} individual{formData.quantity > 1 ? 'es' : ''} con IDs únicos
+                    </p>
                   </div>
 
                   <div>
@@ -985,7 +890,7 @@ PRINT 1,1
                       ) : (
                         <Save className="w-5 h-5 mr-2" />
                       )}
-                      Crear Activo
+                      Crear {formData.quantity > 1 ? `${formData.quantity} Activos` : 'Activo'}
                     </button>
                   </div>
                 </div>
@@ -995,8 +900,16 @@ PRINT 1,1
                 <div className="space-y-4 text-center">
                   <div className="bg-green-50 p-4 rounded-lg">
                     <Check className="w-12 h-12 text-green-500 mx-auto mb-2" />
-                    <h3 className="text-lg font-medium text-green-800">¡Activo Creado!</h3>
-                    <p className="text-green-600">El código QR ha sido generado</p>
+                    <h3 className="text-lg font-medium text-green-800">
+                      ¡{((window as any).createdAssets?.length || 1) > 1 
+                        ? 'Activos Creados' 
+                        : 'Activo Creado'}!
+                    </h3>
+                    <p className="text-green-600">
+                      {((window as any).createdAssets?.length || 1) > 1 
+                        ? `Se crearon ${(window as any).createdAssets?.length} activos con sus códigos QR` 
+                        : 'El código QR ha sido generado'}
+                    </p>
                   </div>
 
                   <div className="bg-gray-100 p-4 rounded-lg">
@@ -1021,12 +934,16 @@ PRINT 1,1
                     </div>
                     <h4 className="font-medium">{qrData.name}</h4>
                     <p className="text-sm text-gray-600">{qrData.school} - {qrData.classroom}</p>
-                    <p className="text-xs text-gray-500 mt-2">ID: {qrData.asset_id}</p>
+                    <p className="text-xs text-gray-500 mt-2">
+                      {((window as any).createdAssets?.length || 1) > 1 
+                        ? `${(window as any).createdAssets?.length} activos con IDs únicos` 
+                        : `ID: ${qrData.asset_id.substring(0, 8)}...`}
+                    </p>
                   </div>
 
                   <div className="space-y-3">
                     <button
-                      onClick={printQR}
+                      onClick={() => printMultipleStickers()}
                       disabled={isLoading}
                       className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center hover:bg-blue-700"
                     >
@@ -1035,7 +952,9 @@ PRINT 1,1
                       ) : (
                         <Printer className="w-5 h-5 mr-2" />
                       )}
-                      Imprimir QR
+                      Imprimir {((window as any).createdAssets?.length || 1) > 1 
+                        ? `${(window as any).createdAssets?.length} Etiquetas` 
+                        : 'Etiqueta'}
                     </button>
 
                     <button
