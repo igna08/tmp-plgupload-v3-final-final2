@@ -48,7 +48,7 @@ interface Classroom {
 
 interface FormData {
   price: string;
-  quantity: number;
+  quantity: string;
   school_id: string;
   classroom_id: string;
   template_id: string;
@@ -92,7 +92,7 @@ const AssetCreatorFAB: React.FC = () => {
   const [status, setStatus] = useState<StatusState>({ type: '', message: '' });
   const [formData, setFormData] = useState<FormData>({
     price: '',
-    quantity: 1,
+    quantity: '1',
     school_id: '',
     classroom_id: '',
     template_id: ''
@@ -150,7 +150,6 @@ const AssetCreatorFAB: React.FC = () => {
       
       const data: School[] = await response.json();
       setSchools(data);
-      setStatus({ type: 'success', message: 'Escuelas cargadas correctamente' });
     } catch (error) {
       setStatus({ type: 'error', message: 'Error al cargar escuelas' });
       console.error('Error loading schools:', error);
@@ -215,7 +214,6 @@ const AssetCreatorFAB: React.FC = () => {
       
       const data: Classroom[] = await response.json();
       setClassrooms(data);
-      setStatus({ type: 'success', message: 'Aulas cargadas correctamente' });
     } catch (error) {
       setStatus({ type: 'error', message: 'Error al cargar aulas' });
       console.error('Error loading classrooms:', error);
@@ -282,7 +280,7 @@ const AssetCreatorFAB: React.FC = () => {
     setStatus({ type: 'success', message: 'Foto capturada exitosamente' });
   };
 
-  const handleInputChange = (field: keyof FormData, value: string | number): void => {
+  const handleInputChange = (field: keyof FormData, value: string): void => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -303,7 +301,8 @@ const AssetCreatorFAB: React.FC = () => {
       setStatus({ type: 'error', message: 'Seleccione un aula' });
       return false;
     }
-    if (formData.quantity < 1 || formData.quantity > 50) {
+    const quantity = parseInt(formData.quantity);
+    if (isNaN(quantity) || quantity < 1 || quantity > 50) {
       setStatus({ type: 'error', message: 'La cantidad debe estar entre 1 y 50' });
       return false;
     }
@@ -315,16 +314,17 @@ const AssetCreatorFAB: React.FC = () => {
 
     setIsLoading(true);
     try {
+      const quantity = parseInt(formData.quantity);
       const createdAssets: QRData[] = [];
       const selectedTemplate = templates.find(t => t.id === formData.template_id);
       const selectedSchoolData = schools.find(s => s.id === formData.school_id);
       const selectedClassroomData = classrooms.find(c => c.id === formData.classroom_id);
 
       // Crear múltiples activos según la cantidad
-      for (let i = 0; i < formData.quantity; i++) {
+      for (let i = 0; i < quantity; i++) {
         setStatus({ 
           type: 'success', 
-          message: `Creando activo ${i + 1} de ${formData.quantity}...` 
+          message: `Creando activo ${i + 1} de ${quantity}...` 
         });
 
         // Crear el activo
@@ -376,7 +376,7 @@ const AssetCreatorFAB: React.FC = () => {
         });
 
         // Pequeña pausa entre creaciones
-        if (i < formData.quantity - 1) {
+        if (i < quantity - 1) {
           await new Promise(resolve => setTimeout(resolve, 300));
         }
       }
@@ -389,7 +389,7 @@ const AssetCreatorFAB: React.FC = () => {
       setCurrentStep('qr');
       setStatus({ 
         type: 'success', 
-        message: `¡${formData.quantity} activo${formData.quantity > 1 ? 's' : ''} creado${formData.quantity > 1 ? 's' : ''} exitosamente!` 
+        message: `¡${quantity} activo${quantity > 1 ? 's' : ''} creado${quantity > 1 ? 's' : ''} exitosamente!` 
       });
     } catch (error) {
       setStatus({ type: 'error', message: 'Error al crear los activos' });
@@ -466,20 +466,7 @@ const AssetCreatorFAB: React.FC = () => {
     const itemSize = getTextSize(itemInfo, 15, 2);
     const itemLines = splitText(itemInfo, 20);
 
-    console.log('Generando etiqueta con:', {
-      assetUrl,
-      aulaInfo,
-      itemInfo,
-      assetId,
-      aulaSize,
-      itemSize,
-      aulaLines,
-      itemLines
-    });
-
     // Generar comandos TSPL
-    // La etiqueta de 50mm son ~394 dots a 200dpi
-    // Dividimos en dos mitades: QR en izquierda (0-197), texto en derecha (197-394)
     let tspl = `SIZE 50 mm,25 mm
 GAP 2 mm,0
 DIRECTION 1
@@ -488,16 +475,16 @@ CLS
 QRCODE 15,30,M,4,A,0,M2,S7,"${assetUrl}"
 `;
 
-    // Texto comienza en la mitad derecha (197 dots + margen de 10 = 207)
+    // Texto comienza en la mitad derecha
     const textStartX = 207;
 
-    // Agregar texto del aula (con posible segunda línea)
+    // Agregar texto del aula
     let yPos = 25;
     aulaLines.forEach((line, index) => {
       tspl += `TEXT ${textStartX},${yPos + (index * 40)},"${aulaSize}",0,1,1,"${line}"\n`;
     });
 
-    // Agregar texto del nombre (con posible segunda línea)
+    // Agregar texto del nombre
     yPos = aulaLines.length > 1 ? 105 : 75;
     itemLines.forEach((line, index) => {
       tspl += `TEXT ${textStartX},${yPos + (index * 35)},"${itemSize}",0,1,1,"${line}"\n`;
@@ -519,11 +506,6 @@ QRCODE 15,30,M,4,A,0,M2,S7,"${assetUrl}"
 
     const encoder = new TextEncoder();
     const data = encoder.encode(tsplString);
-
-    console.log('Enviando comandos TSPL:', {
-      totalBytes: data.length,
-      preview: tsplString
-    });
 
     const chunkSize = 512;
     for (let i = 0; i < data.length; i += chunkSize) {
@@ -581,55 +563,6 @@ QRCODE 15,30,M,4,A,0,M2,S7,"${assetUrl}"
     }
   };
 
-  const testPrint = async (): Promise<void> => {
-    if (!bluetoothPrinter) {
-      await connectBluetooth();
-      if (!bluetoothPrinter) return;
-    }
-
-    try {
-      setIsLoading(true);
-      const testTSPL = `SIZE 50 mm,25 mm
-GAP 2 mm,0
-DIRECTION 1
-DENSITY 8
-CLS
-TEXT 50,50,"4",0,1,1,"PRUEBA"
-TEXT 50,100,"3",0,1,1,"Etiqueta OK"
-PRINT 1
-`;
-      await sendTSPLCommands(testTSPL);
-      setStatus({ type: 'success', message: 'Impresión de prueba enviada' });
-    } catch (error) {
-      setStatus({ type: 'error', message: 'Error en prueba de impresión' });
-      console.error('Test print error:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const testPrinterConnection = async (): Promise<void> => {
-    if (!bluetoothPrinter?.characteristic) {
-      throw new Error('Impresora no conectada');
-    }
-    
-    try {
-      const testLabel = `SIZE 50 mm,25 mm
-GAP 2 mm,0 mm
-DIRECTION 1
-CLS
-TEXT 80,80,"3",0,1,1,"TEST OK"
-TEXT 60,120,"2",0,1,1,"PEGATINA"
-PRINT 1,1
-`;
-      
-      await sendTSPLCommands(testLabel);
-      setStatus({ type: 'success', message: 'Prueba de impresora exitosa' });
-    } catch (error) {
-      throw new Error('Fallo en prueba de impresora');
-    }
-  };
-
   const resetForm = (): void => {
     cleanupCamera();
     setCurrentStep('camera');
@@ -638,7 +571,7 @@ PRINT 1,1
     (window as any).createdAssets = null;
     setFormData({
       price: '',
-      quantity: 1,
+      quantity: '1',
       school_id: '',
       classroom_id: '',
       template_id: ''
@@ -803,6 +736,160 @@ PRINT 1,1
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Plantilla del Activo *
+                    </label>
+                    <select
+                      value={formData.template_id}
+                      onChange={(e) => handleInputChange('template_id', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                    >
+                      <option value="">Seleccionar plantilla</option>
+                      {templates.map(template => (
+                        <option key={template.id} value={template.id}>
+                          {template.name} ({template.category?.name || 'Sin categoría'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Aula *
+                    </label>
+                    <select
+                      value={formData.classroom_id}
+                      onChange={(e) => handleInputChange('classroom_id', e.target.value)}
+                      disabled={!selectedSchool}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent disabled:bg-gray-100"
+                    >
+                      <option value="">Seleccionar aula</option>
+                      {classrooms.map(classroom => (
+                        <option key={classroom.id} value={classroom.id}>
+                          {classroom.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex space-x-3 pt-4">
+                    <button
+                      onClick={handleStepBack}
+                      className="flex-1 bg-gray-500 text-white py-3 px-4 rounded-lg font-medium"
+                    >
+                      Atrás
+                    </button>
+                    <button
+                      onClick={createAsset}
+                      disabled={isLoading}
+                      className="flex-1 bg-black text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
+                    >
+                      {isLoading ? (
+                        <Loader className="w-5 h-5 animate-spin mr-2" />
+                      ) : (
+                        <Save className="w-5 h-5 mr-2" />
+                      )}
+                      {formData.quantity && parseInt(formData.quantity) > 1 
+                        ? `Crear ${formData.quantity} Activos` 
+                        : 'Crear Activo'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {currentStep === 'qr' && qrData && (
+                <div className="space-y-4 text-center">
+                  <div className="bg-green-50 p-4 rounded-lg">
+                    <Check className="w-12 h-12 text-green-500 mx-auto mb-2" />
+                    <h3 className="text-lg font-medium text-green-800">
+                      ¡{((window as any).createdAssets?.length || 1) > 1 
+                        ? 'Activos Creados' 
+                        : 'Activo Creado'}!
+                    </h3>
+                    <p className="text-green-600">
+                      {((window as any).createdAssets?.length || 1) > 1 
+                        ? `Se crearon ${(window as any).createdAssets?.length} activos con sus códigos QR` 
+                        : 'El código QR ha sido generado'}
+                    </p>
+                  </div>
+
+                  <div className="bg-gray-100 p-4 rounded-lg">
+                    <div className="w-32 h-32 bg-white border-2 border-gray-300 mx-auto mb-3 flex items-center justify-center overflow-hidden rounded-lg">
+                      {qrData.qr_url ? (
+                        <img 
+                          src={qrData.qr_url} 
+                          alt="QR Code" 
+                          className="w-full h-full object-contain"
+                          onError={(e) => {
+                            console.error('Error loading QR image:', qrData.qr_url);
+                            e.currentTarget.style.display = 'none';
+                            (e.currentTarget.nextElementSibling as HTMLElement)!.style.display = 'flex';
+                          }}
+                        />
+                      ) : null}
+                      <div className="w-full h-full flex items-center justify-center" style={{display: qrData.qr_url ? 'none' : 'flex'}}>
+                        <span className="text-xs text-gray-500 text-center">
+                          {qrData.qr_url ? 'Cargando QR...' : 'QR no disponible'}
+                        </span>
+                      </div>
+                    </div>
+                    <h4 className="font-medium">{qrData.name}</h4>
+                    <p className="text-sm text-gray-600">{qrData.school} - {qrData.classroom}</p>
+                    <p className="text-xs text-gray-500 mt-2">
+                      {((window as any).createdAssets?.length || 1) > 1 
+                        ? `${(window as any).createdAssets?.length} activos con IDs únicos` 
+                        : `ID: ${qrData.asset_id.substring(0, 8)}...`}
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <button
+                      onClick={() => printMultipleStickers()}
+                      disabled={isLoading}
+                      className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center hover:bg-blue-700"
+                    >
+                      {isLoading ? (
+                        <Loader className="w-5 h-5 animate-spin mr-2" />
+                      ) : (
+                        <Printer className="w-5 h-5 mr-2" />
+                      )}
+                      Imprimir {((window as any).createdAssets?.length || 1) > 1 
+                        ? `${(window as any).createdAssets?.length} Etiquetas` 
+                        : 'Etiqueta'}
+                    </button>
+
+                    <button
+                      onClick={downloadQR}
+                      className="w-full bg-gray-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center hover:bg-gray-700"
+                    >
+                      <Download className="w-5 h-5 mr-2" />
+                      Descargar QR
+                    </button>
+
+                    <button
+                      onClick={resetForm}
+                      className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700"
+                    >
+                      Crear Otro Activo
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+export default AssetCreatorFAB;>
+                    <p className="text-xs text-gray-500 mt-1">
+                      El nombre de la plantilla se usará para identificar el activo
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
                       Precio estimado (unitario)
                     </label>
                     <input
@@ -820,15 +907,23 @@ PRINT 1,1
                       Cantidad de activos a crear *
                     </label>
                     <input
-                      type="number"
-                      min="1"
-                      max="50"
+                      type="text"
+                      inputMode="numeric"
                       value={formData.quantity}
-                      onChange={(e) => handleInputChange('quantity', parseInt(e.target.value) || 1)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // Solo permitir números
+                        if (value === '' || /^\d+$/.test(value)) {
+                          handleInputChange('quantity', value);
+                        }
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                      placeholder="1"
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      Se crearán {formData.quantity} activo{formData.quantity > 1 ? 's' : ''} individual{formData.quantity > 1 ? 'es' : ''} con IDs únicos
+                      {formData.quantity && parseInt(formData.quantity) > 0 
+                        ? `Se crearán ${formData.quantity} activo${parseInt(formData.quantity) > 1 ? 's' : ''} individual${parseInt(formData.quantity) > 1 ? 'es' : ''} con IDs únicos`
+                        : 'Ingrese la cantidad de activos a crear (1-50)'}
                     </p>
                   </div>
 
@@ -890,7 +985,9 @@ PRINT 1,1
                       ) : (
                         <Save className="w-5 h-5 mr-2" />
                       )}
-                      Crear {formData.quantity > 1 ? `${formData.quantity} Activos` : 'Activo'}
+                      {formData.quantity && parseInt(formData.quantity) > 1 
+                        ? `Crear ${formData.quantity} Activos` 
+                        : 'Crear Activo'}
                     </button>
                   </div>
                 </div>
