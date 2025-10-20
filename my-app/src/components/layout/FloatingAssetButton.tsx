@@ -750,6 +750,70 @@ QRCODE 15,30,M,4,A,0,M2,S7,"${assetUrl}"
                         </option>
                       ))}
                     </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      El nombre de la plantilla se usará para identificar el activo
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Precio estimado (unitario)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.price}
+                      onChange={(e) => handleInputChange('price', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                      placeholder="0.00"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Cantidad de activos a crear *
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={formData.quantity}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // Solo permitir números
+                        if (value === '' || /^\d+$/.test(value)) {
+                          handleInputChange('quantity', value);
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                      placeholder="1"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      {formData.quantity && parseInt(formData.quantity) > 0 
+                        ? `Se crearán ${formData.quantity} activo${parseInt(formData.quantity) > 1 ? 's' : ''} individual${parseInt(formData.quantity) > 1 ? 'es' : ''} con IDs únicos`
+                        : 'Ingrese la cantidad de activos a crear (1-50)'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Escuela *
+                    </label>
+                    <select
+                      value={formData.school_id}
+                      onChange={(e) => {
+                        setSelectedSchool(e.target.value);
+                        handleInputChange('school_id', e.target.value);
+                        handleInputChange('classroom_id', '');
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                    >
+                      <option value="">Seleccionar escuela</option>
+                      {schools.map(school => (
+                        <option key={school.id} value={school.id}>
+                          {school.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>
