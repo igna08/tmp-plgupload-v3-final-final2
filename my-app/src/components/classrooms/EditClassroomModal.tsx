@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, FormEvent, useEffect } from 'react';
@@ -18,13 +19,13 @@ interface Classroom {
 interface EditClassroomModalProps {
   isOpen: boolean;
   onClose: () => void;
-  classroom: Classroom | null; // Classroom data to pre-fill
+  classroom: Classroom | null; // Datos del aula para pre-llenar
   onClassroomUpdated?: () => void;
 }
 
 interface ClassroomUpdateFormData {
   name: string;
-  capacity: string; // Keep as string for form input
+  capacity: string; // Mantener como string para el input del formulario
 }
 
 interface ApiErrorDetail {
@@ -57,7 +58,7 @@ const EditClassroomModal: React.FC<EditClassroomModalProps> = ({
       setGeneralError(null);
       setIsSubmitting(false);
     } else if (!isOpen) {
-        // Reset form when modal is closed and not just re-opened with new data
+        // Reiniciar formulario cuando el modal se cierra y no solo se reabre con nuevos datos
         setFormData({ name: '', capacity: '' });
         setErrors({});
         setGeneralError(null);
@@ -77,7 +78,7 @@ const EditClassroomModal: React.FC<EditClassroomModalProps> = ({
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!classroom) {
-      setGeneralError("Classroom data is missing.");
+      setGeneralError("Faltan los datos del aula.");
       return;
     }
 
@@ -88,7 +89,7 @@ const EditClassroomModal: React.FC<EditClassroomModalProps> = ({
     try {
       const capacityValue = formData.capacity === '' ? null : parseInt(formData.capacity, 10);
       if (formData.capacity !== '' && (isNaN(capacityValue!) || capacityValue! < 0)) {
-        setErrors(prev => ({...prev, capacity: "Capacity must be a non-negative number."}));
+        setErrors(prev => ({...prev, capacity: "La capacidad debe ser un número no negativo."}));
         setIsSubmitting(false);
         return;
       }
@@ -96,14 +97,10 @@ const EditClassroomModal: React.FC<EditClassroomModalProps> = ({
       const payload: { name: string; capacity?: number | null } = { name: formData.name };
        if (capacityValue !== null) {
         payload.capacity = capacityValue;
-      } else if (formData.capacity === '') { // If capacity was left empty
-        // If API expects null for empty capacity, or expects field to be omitted.
-        // For PUT, often sending null is explicit, or omitting means "no change".
-        // Assuming API handles omission or null correctly for optional fields.
-        // Let's explicitly send null if user cleared it, assuming API handles it.
+      } else if (formData.capacity === '') {
+        // Si se dejó vacía la capacidad, enviar null explícitamente
         payload.capacity = null;
       }
-
 
       await axios.put(`${API_BASE_URL}/classrooms/${classroom.id}`, payload);
 
@@ -112,7 +109,7 @@ const EditClassroomModal: React.FC<EditClassroomModalProps> = ({
       }
       onClose();
     } catch (err: any) {
-      console.error('Failed to update classroom:', err);
+      console.error('Error al actualizar el aula:', err);
       if (err.response?.data?.detail) {
         const errorDetails = err.response.data.detail;
         if (Array.isArray(errorDetails)) {
@@ -121,20 +118,20 @@ const EditClassroomModal: React.FC<EditClassroomModalProps> = ({
             if (detail.loc && detail.loc.length > 1) {
               newErrors[detail.loc[1]] = detail.msg;
             } else {
-              setGeneralError(detail.msg || "An unknown validation error occurred.");
+              setGeneralError(detail.msg || "Ocurrió un error de validación desconocido.");
             }
           });
           setErrors(newErrors);
           if (Object.keys(newErrors).length === 0 && !generalError && errorDetails.length > 0) {
-             setGeneralError("Validation failed. Please check your input.");
+             setGeneralError("Error de validación. Por favor verifica los datos ingresados.");
           }
         } else if (typeof errorDetails === 'string') {
           setGeneralError(errorDetails);
         } else {
-          setGeneralError('An unexpected error occurred. Please try again.');
+          setGeneralError('Ocurrió un error inesperado. Por favor intenta de nuevo.');
         }
       } else {
-        setGeneralError('An unexpected server error occurred.');
+        setGeneralError('Ocurrió un error inesperado en el servidor.');
       }
     } finally {
       setIsSubmitting(false);
@@ -145,12 +142,12 @@ const EditClassroomModal: React.FC<EditClassroomModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Edit Classroom: ${classroom?.name || ''}`}
+      title={`Editar Aula: ${classroom?.name || ''}`}
       size="medium"
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>
-            Cancel
+            Cancelar
           </Button>
           <Button
             variant="primary"
@@ -159,36 +156,36 @@ const EditClassroomModal: React.FC<EditClassroomModalProps> = ({
             disabled={isSubmitting}
             form="edit-classroom-form"
           >
-            {isSubmitting ? 'Saving...' : 'Save Changes'}
+            {isSubmitting ? 'Guardando...' : 'Guardar Cambios'}
           </Button>
         </>
       }
     >
-      <form id="edit-classroom-form" onSubmit={handleSubmit} className="space-y-4">
+      <form id="edit-classroom-form" onSubmit={handleSubmit} className="space-y-6 p-1">
         {generalError && (
-          <div className="p-3 bg-red-50 border border-accentRed rounded-radiusSmall text-sm text-accentRed">
+          <div className="p-4 bg-red-50 border border-accentRed rounded-radiusSmall text-sm text-accentRed">
             {generalError}
           </div>
         )}
-        <div>
-          <label htmlFor="name" className="block text-sm font-medium text-neutralDark mb-1">
-            Classroom Name <span className="text-accentRed">*</span>
+        <div className="space-y-2">
+          <label htmlFor="name" className="block text-sm font-medium text-neutralDark">
+            Nombre del Aula <span className="text-accentRed">*</span>
           </label>
           <Input
             id="name"
             name="name"
             value={formData.name}
             onChange={handleChange}
-            placeholder="e.g., Room 101, Science Lab"
+            placeholder="ej., Salón 101, Laboratorio de Ciencias"
             disabled={isSubmitting}
             hasError={!!errors.name}
           />
-          {errors.name && <p className="text-xs text-accentRed mt-1">{errors.name}</p>}
+          {errors.name && <p className="text-xs text-accentRed mt-1.5">{errors.name}</p>}
         </div>
 
-        <div>
-          <label htmlFor="capacity" className="block text-sm font-medium text-neutralDark mb-1">
-            Capacity
+        <div className="space-y-2">
+          <label htmlFor="capacity" className="block text-sm font-medium text-neutralDark">
+            Capacidad
           </label>
           <Input
             id="capacity"
@@ -196,11 +193,11 @@ const EditClassroomModal: React.FC<EditClassroomModalProps> = ({
             type="number"
             value={formData.capacity}
             onChange={handleChange}
-            placeholder="e.g., 30 (Optional)"
+            placeholder="ej., 30 (Opcional)"
             disabled={isSubmitting}
             hasError={!!errors.capacity}
           />
-          {errors.capacity && <p className="text-xs text-accentRed mt-1">{errors.capacity}</p>}
+          {errors.capacity && <p className="text-xs text-accentRed mt-1.5">{errors.capacity}</p>}
         </div>
       </form>
     </Modal>
