@@ -5,18 +5,31 @@ import axios from 'axios';
 import Button from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import { 
+  Plus,
   ChevronLeft, 
   ChevronRight, 
   Eye, 
+  Edit3,
+  Trash2,
   ShieldAlert,
   Building,
   Users,
   AlertCircle,
-  Loader2
+  Loader2,
+  Search,
+  Filter
 } from 'lucide-react';
 import Link from 'next/link';
+import CreateClassroomModal from '@/components/classrooms/CreateClassroomModal';
+import EditClassroomModal from '@/components/classrooms/EditClassroomModal';
+import Modal from '@/components/ui/Modal';
 
-// Classroom interface
+// Interfaces
+interface School {
+  id: string;
+  name: string;
+}
+
 interface Classroom {
   id: string;
   name: string;
@@ -29,14 +42,43 @@ const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
 const AllClassroomsAdminPage: React.FC = () => {
   const { user, isLoading: isAuthLoading } = useAuth();
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [selectedSchoolId, setSelectedSchoolId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [limit] = useState(10);
   const [totalClassrooms, setTotalClassrooms] = useState(0);
   const [hasNextPage, setHasNextPage] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Modal states
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [selectedClassroom, setSelectedClassroom] = useState<Classroom | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const totalPages = Math.max(1, Math.ceil(totalClassrooms / limit));
+
+  // Fetch schools for the dropdown in create modal
+  useEffect(() => {
+    const fetchSchools = async () => {
+      if (!user?.is_superuser) return;
+      try {
+        const response = await axios.get(`${API_BASE_URL}/schools/`, {
+          params: { limit: 1000 }
+        });
+        setSchools(response.data || []);
+      } catch (err) {
+        console.error("Failed to fetch schools:", err);
+      }
+    };
+
+    if (!isAuthLoading && user?.is_superuser) {
+      fetchSchools();
+    }
+  }, [user, isAuthLoading]);
 
   const fetchAllClassrooms = useCallback(async (page: number) => {
     if (!user?.is_superuser) return;
@@ -46,7 +88,7 @@ const AllClassroomsAdminPage: React.FC = () => {
     
     try {
       const response = await axios.get(`${API_BASE_URL}/classrooms/`, {
-        params: { skip: page * limit, limit: limit + 1 }, // Fetch one extra to check if there's a next page
+        params: { skip: page * limit, limit: limit + 1 },
       });
       
       const data = response.data;
@@ -60,10 +102,9 @@ const AllClassroomsAdminPage: React.FC = () => {
         setHasNextPage(false);
       }
       
-      // Update total count estimation
       if (page === 0) {
         if (hasMore) {
-          setTotalClassrooms(limit + 1); // At least one more page
+          setTotalClassrooms(limit + 1);
         } else {
           setTotalClassrooms(data.length);
         }
@@ -99,6 +140,74 @@ const AllClassroomsAdminPage: React.FC = () => {
     fetchAllClassrooms(currentPage);
   };
 
+  // Create Modal handlers
+  const openCreateModal = () => {
+    if (schools.length === 0) {
+      setError("No hay escuelas disponibles. Por favor, crea una escuela primero.");
+      return;
+    }
+    setSelectedSchoolId(schools[0]?.id || '');
+    setIsCreateModalOpen(true);
+  };
+
+  const closeCreateModal = () => {
+    setIsCreateModalOpen(false);
+    setSelectedSchoolId('');
+  };
+
+  const handleClassroomCreated = () => {
+    fetchAllClassrooms(currentPage);
+  };
+
+  // Edit Modal handlers
+  const openEditModal = (classroom: Classroom) => {
+    setSelectedClassroom(classroom);
+    setIsEditModalOpen(true);
+  };
+
+  const closeEditModal = () => {
+    setSelectedClassroom(null);
+    setIsEditModalOpen(false);
+  };
+
+  const handleClassroomUpdated = () => {
+    fetchAllClassrooms(currentPage);
+  };
+
+  // Delete Modal handlers
+  const openDeleteModal = (classroom: Classroom) => {
+    setSelectedClassroom(classroom);
+    setIsDeleteModalOpen(true);
+  };
+
+  const closeDeleteModal = () => {
+    setSelectedClassroom(null);
+    setIsDeleteModalOpen(false);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!selectedClassroom) return;
+    setIsDeleting(true);
+    setError(null);
+    
+    try {
+      await axios.delete(`${API_BASE_URL}/classrooms/${selectedClassroom.id}`);
+      fetchAllClassrooms(currentPage);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Error al eliminar el aula.");
+      console.error("Delete classroom error:", err);
+    } finally {
+      setIsDeleting(false);
+      closeDeleteModal();
+    }
+  };
+
+  // Filter classrooms by search term
+  const filteredClassrooms = classrooms.filter(classroom =>
+    classroom.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    classroom.id.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   // Loading auth state
   if (isAuthLoading) {
     return (
@@ -114,7 +223,7 @@ const AllClassroomsAdminPage: React.FC = () => {
   // Access denied
   if (!user?.is_superuser) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
         <div className="text-center bg-white p-8 rounded-lg shadow-lg max-w-md">
           <ShieldAlert className="h-12 w-12 text-red-500 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">Acceso Denegado</h3>
@@ -125,20 +234,18 @@ const AllClassroomsAdminPage: React.FC = () => {
   }
 
   // Error state
-  if (error) {
+  if (error && classrooms.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50">
-        {/* Header */}
+        {/* Header con padding */}
         <div className="bg-white shadow">
-          <div className="px-4 sm:px-6 lg:px-8">
-            <div className="py-6">
-              <h1 className="text-3xl font-bold text-gray-900">Todas las Aulas (Vista Admin)</h1>
-              <p className="mt-1 text-sm text-gray-500">Gestión centralizada de aulas del sistema</p>
-            </div>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <h1 className="text-3xl font-bold text-gray-900">Todas las Aulas (Vista Admin)</h1>
+            <p className="mt-1 text-sm text-gray-500">Gestión centralizada de aulas del sistema</p>
           </div>
         </div>
 
-        <div className="px-4 sm:px-6 lg:px-8 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center bg-white p-8 rounded-lg shadow-lg max-w-md mx-auto">
             <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">Error al cargar datos</h3>
@@ -157,9 +264,9 @@ const AllClassroomsAdminPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
+      {/* Header con padding mejorado */}
       <div className="bg-white shadow">
-        <div className="px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="py-6">
             <div className="flex items-center justify-between">
               <div>
@@ -171,34 +278,76 @@ const AllClassroomsAdminPage: React.FC = () => {
               <div className="flex items-center space-x-4">
                 <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium flex items-center">
                   <Building className="h-4 w-4 mr-1" />
-                  {classrooms.length} aulas cargadas
+                  {classrooms.length} {classrooms.length === 1 ? 'aula' : 'aulas'}
                 </div>
+                <Button
+                  onClick={openCreateModal}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Nueva Aula</span>
+                </Button>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="px-4 sm:px-6 lg:px-8 py-8">
+      {/* Content con padding mejorado */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Search bar con margen */}
+        <div className="bg-white shadow rounded-lg mb-6">
+          <div className="px-6 py-4">
+            <div className="relative max-w-lg">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                placeholder="Buscar aulas por nombre o ID..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+              />
+            </div>
+          </div>
+        </div>
+
         {/* Loading State */}
         {isLoading && (
-          <div className="text-center py-12">
+          <div className="text-center py-12 bg-white rounded-lg shadow">
             <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
             <p className="text-gray-600">Cargando aulas...</p>
           </div>
         )}
 
         {/* Empty State */}
-        {!isLoading && classrooms.length === 0 && (
+        {!isLoading && filteredClassrooms.length === 0 && (
           <div className="text-center py-12 bg-white rounded-lg shadow">
             <Building className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No se encontraron aulas</h3>
-            <p className="text-gray-500">No hay aulas registradas en el sistema actualmente.</p>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              {searchTerm ? 'No se encontraron aulas' : 'No hay aulas registradas'}
+            </h3>
+            <p className="text-gray-500 mb-6">
+              {searchTerm 
+                ? 'Intenta con términos de búsqueda diferentes.'
+                : 'Comienza creando tu primera aula.'
+              }
+            </p>
+            {!searchTerm && (
+              <Button
+                onClick={openCreateModal}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg flex items-center space-x-2 mx-auto transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Crear Primera Aula</span>
+              </Button>
+            )}
           </div>
         )}
 
         {/* Classrooms Table */}
-        {!isLoading && classrooms.length > 0 && (
+        {!isLoading && filteredClassrooms.length > 0 && (
           <div className="bg-white shadow rounded-lg overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
@@ -219,7 +368,7 @@ const AllClassroomsAdminPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {classrooms.map((classroom, index) => (
+                  {filteredClassrooms.map((classroom, index) => (
                     <tr key={classroom.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
@@ -251,11 +400,30 @@ const AllClassroomsAdminPage: React.FC = () => {
                         </Link>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <Link href={`/classrooms/${classroom.id}`}>
-                          <button className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 p-2 rounded-lg transition-colors">
-                            <Eye className="h-4 w-4" />
+                        <div className="flex items-center space-x-2">
+                          <Link href={`/classrooms/${classroom.id}`}>
+                            <button 
+                              className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 p-2 rounded-lg transition-colors"
+                              title="Ver detalles"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                          </Link>
+                          <button 
+                            onClick={() => openEditModal(classroom)}
+                            className="text-yellow-600 hover:text-yellow-800 bg-yellow-50 hover:bg-yellow-100 p-2 rounded-lg transition-colors"
+                            title="Editar aula"
+                          >
+                            <Edit3 className="h-4 w-4" />
                           </button>
-                        </Link>
+                          <button 
+                            onClick={() => openDeleteModal(classroom)}
+                            className="text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 p-2 rounded-lg transition-colors"
+                            title="Eliminar aula"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -315,6 +483,56 @@ const AllClassroomsAdminPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Modals */}
+      {selectedSchoolId && (
+        <CreateClassroomModal
+          isOpen={isCreateModalOpen}
+          onClose={closeCreateModal}
+          schoolId={selectedSchoolId}
+          onClassroomCreated={handleClassroomCreated}
+        />
+      )}
+
+      {selectedClassroom && (
+        <EditClassroomModal
+          isOpen={isEditModalOpen}
+          onClose={closeEditModal}
+          classroom={selectedClassroom}
+          onClassroomUpdated={handleClassroomUpdated}
+        />
+      )}
+
+      {selectedClassroom && (
+        <Modal
+          isOpen={isDeleteModalOpen}
+          onClose={closeDeleteModal}
+          title="Confirmar Eliminación"
+          size="small"
+          footer={
+            <>
+              <Button variant="secondary" onClick={closeDeleteModal} disabled={isDeleting}>
+                Cancelar
+              </Button>
+              <Button variant="destructive" onClick={handleConfirmDelete} disabled={isDeleting}>
+                {isDeleting ? 'Eliminando...' : 'Eliminar Aula'}
+              </Button>
+            </>
+          }
+        >
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="h-6 w-6 text-red-500 flex-shrink-0" aria-hidden="true" />
+            <div>
+              <p className="text-sm text-gray-900">
+                ¿Estás seguro de que quieres eliminar el aula <span className="font-semibold">{selectedClassroom.name}</span>?
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                Esta acción no se puede deshacer. Todos los estudiantes y datos asociados también podrían verse afectados.
+              </p>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
