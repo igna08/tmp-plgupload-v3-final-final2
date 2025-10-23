@@ -652,24 +652,34 @@ const saveAssetChanges = async () => {
               </div>
 
               {/* Financial Information */}
-              <div className="bg-white shadow rounded-lg p-6">
+                <div className="bg-white shadow rounded-lg p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Información Financiera</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Valor Estimado</label>
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        value={editForm.value_estimate || 0}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, value_estimate: parseFloat(e.target.value) || 0 }))}
-                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    ) : (
-                      <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md flex items-center">
-                        <DollarSign className="h-4 w-4 text-gray-400 mr-2" />
-                        ${asset.value_estimate.toLocaleString()}
-                      </p>
-                    )}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Valor Estimado</label>
+                  {isEditing ? (
+                    <input
+                    type="number"
+                    step="any"
+                    inputMode="decimal"
+                    pattern="[0-9]*([.,][0-9]+)?"
+                    value={editForm.value_estimate ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setEditForm(prev => ({
+                      ...prev,
+                      value_estimate: v === '' ? undefined : parseFloat(v)
+                      }));
+                    }}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Ingresa un valor"
+                    />
+                  ) : (
+                    <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md flex items-center">
+                    <DollarSign className="h-4 w-4 text-gray-400 mr-2" />
+                    ${asset.value_estimate.toLocaleString()}
+                    </p>
+                  )}
                   </div>
                   
                   <div>
