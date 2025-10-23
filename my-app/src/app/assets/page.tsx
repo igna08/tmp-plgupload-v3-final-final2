@@ -712,7 +712,7 @@ const AllAssetsAdminPage: React.FC = () => {
                             <Eye className="h-4 w-4" />
                           </button>
                           <Link
-                            href={`/assets/${asset.id}/edit`}
+                            href={`/assets/${asset.id}`}
                             className="text-green-600 hover:text-green-800 p-1 rounded"
                             title="Editar"
                           >
