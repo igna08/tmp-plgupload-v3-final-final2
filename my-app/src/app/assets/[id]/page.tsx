@@ -254,13 +254,14 @@ const SingleAssetPage: React.FC = () => {
 const saveAssetChanges = async () => {
   if (!asset || !editForm) return;
   
-  // Preparar el payload solo con campos permitidos para actualización
+  // Preparar el payload SOLO con los campos que realmente queremos editar
+  // EXCLUIMOS image_url porque no se puede editar por ahora
   const updatePayload = {
     template_id: editForm.template_id || null,
     serial_number: editForm.serial_number || null,
     purchase_date: editForm.purchase_date || null,
     value_estimate: editForm.value_estimate || null,
-    image_url: editForm.image_url || null,
+    // image_url: editForm.image_url || null, // ← COMENTADO/ELIMINADO
     status: editForm.status || null,
     classroom_id: editForm.classroom_id || null
   };
@@ -280,7 +281,6 @@ const saveAssetChanges = async () => {
     console.log('=== ERROR COMPLETO ===');
     console.log('Status:', err.response?.status);
     console.log('Error detail:', err.response?.data);
-    console.log('Full error:', err);
     
     const errorMessage = err.response?.data?.detail || 'Error desconocido';
     debugLog('Asset update error', { error: err, message: errorMessage });
@@ -762,18 +762,19 @@ const saveAssetChanges = async () => {
                     <p className="text-sm text-gray-500">No hay imagen disponible</p>
                   </div>
                 </div>
-                {isEditing && (
-                  <div className="mt-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">URL de Imagen</label>
-                    <input
-                      type="url"
-                      value={editForm.image_url || ''}
-                      onChange={(e) => setEditForm(prev => ({ ...prev, image_url: e.target.value }))}
-                      placeholder="https://ejemplo.com/imagen.jpg"
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                )}
+{/* SECCIÓN COMENTADA - Edición de imagen deshabilitada temporalmente */}
+{/* {isEditing && (
+  <div className="mt-3">
+    <label className="block text-sm font-medium text-gray-700 mb-1">URL de Imagen</label>
+    <input
+      type="url"
+      value={editForm.image_url || ''}
+      onChange={(e) => setEditForm(prev => ({ ...prev, image_url: e.target.value }))}
+      placeholder="https://ejemplo.com/imagen.jpg"
+      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+    />
+  </div>
+)} */}
               </div>
 
               {/* QR Code */}
