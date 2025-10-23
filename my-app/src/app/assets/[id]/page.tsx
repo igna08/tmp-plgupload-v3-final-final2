@@ -265,6 +265,9 @@ const saveAssetChanges = async () => {
     classroom_id: editForm.classroom_id || null
   };
   
+  console.log('=== PAYLOAD QUE SE ENVÍA ===');
+  console.log(JSON.stringify(updatePayload, null, 2));
+  
   debugLog('Saving asset changes', { assetId: asset.id, payload: updatePayload });
   setSaving(true);
   try {
@@ -274,9 +277,14 @@ const saveAssetChanges = async () => {
     alert('Activo actualizado exitosamente');
     debugLog('Asset updated successfully', response.data);
   } catch (err: any) {
+    console.log('=== ERROR COMPLETO ===');
+    console.log('Status:', err.response?.status);
+    console.log('Error detail:', err.response?.data);
+    console.log('Full error:', err);
+    
     const errorMessage = err.response?.data?.detail || 'Error desconocido';
     debugLog('Asset update error', { error: err, message: errorMessage });
-    alert('Error al actualizar activo: ' + errorMessage);
+    alert('Error al actualizar activo: ' + JSON.stringify(err.response?.data, null, 2));
   } finally {
     setSaving(false);
   }
