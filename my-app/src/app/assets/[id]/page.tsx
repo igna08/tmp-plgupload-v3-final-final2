@@ -250,26 +250,37 @@ const SingleAssetPage: React.FC = () => {
   };
 
   // Save asset changes
-  const saveAssetChanges = async () => {
-    if (!asset || !editForm) return;
-    
-    debugLog('Saving asset changes', { assetId: asset.id, changes: editForm });
-    setSaving(true);
-    try {
-      const response = await axios.put(`${API_BASE_URL}/assets/${asset.id}`, editForm);
-      setAsset(response.data);
-      setIsEditing(false);
-      alert('Activo actualizado exitosamente');
-      debugLog('Asset updated successfully', response.data);
-    } catch (err: any) {
-      const errorMessage = err.response?.data?.detail || 'Error desconocido';
-      debugLog('Asset update error', { error: err, message: errorMessage });
-      alert('Error al actualizar activo: ' + errorMessage);
-    } finally {
-      setSaving(false);
-    }
+// ✅ BIEN - Enviando solo los campos permitidos
+const saveAssetChanges = async () => {
+  if (!asset || !editForm) return;
+  
+  // Preparar el payload solo con campos permitidos para actualización
+  const updatePayload = {
+    template_id: editForm.template_id || null,
+    serial_number: editForm.serial_number || null,
+    purchase_date: editForm.purchase_date || null,
+    value_estimate: editForm.value_estimate || null,
+    image_url: editForm.image_url || null,
+    status: editForm.status || null,
+    classroom_id: editForm.classroom_id || null
   };
-
+  
+  debugLog('Saving asset changes', { assetId: asset.id, payload: updatePayload });
+  setSaving(true);
+  try {
+    const response = await axios.put(`${API_BASE_URL}/assets/${asset.id}`, updatePayload);
+    setAsset(response.data);
+    setIsEditing(false);
+    alert('Activo actualizado exitosamente');
+    debugLog('Asset updated successfully', response.data);
+  } catch (err: any) {
+    const errorMessage = err.response?.data?.detail || 'Error desconocido';
+    debugLog('Asset update error', { error: err, message: errorMessage });
+    alert('Error al actualizar activo: ' + errorMessage);
+  } finally {
+    setSaving(false);
+  }
+};
   // Delete asset
   const deleteAsset = async () => {
     if (!asset) return;
