@@ -301,7 +301,7 @@ const saveAssetChanges = async () => {
       debugLog('Deleting asset', { assetId: asset.id });
       await axios.delete(`${API_BASE_URL}/assets/${asset.id}`);
       alert('Activo eliminado exitosamente');
-      router.push('/admin/assets');
+      router.push('/assets');
     } catch (err: any) {
       const errorMessage = err.response?.data?.detail || 'Error desconocido';
       debugLog('Asset deletion error', { error: err, message: errorMessage });
@@ -362,7 +362,7 @@ const saveAssetChanges = async () => {
           <div className="px-4 sm:px-6 lg:px-8">
             <div className="py-6">
               <div className="flex items-center">
-                <Link href="/admin/assets" className="mr-4">
+                <Link href="/assets" className="mr-4">
                   <ArrowLeft className="h-6 w-6 text-gray-600 hover:text-gray-800" />
                 </Link>
                 <h1 className="text-3xl font-bold text-gray-900">ID de activo requerido</h1>
@@ -383,7 +383,7 @@ const saveAssetChanges = async () => {
           <div className="px-4 sm:px-6 lg:px-8">
             <div className="py-6">
               <div className="flex items-center">
-                <Link href="/admin/assets" className="mr-4">
+                <Link href="/assets" className="mr-4">
                   <ArrowLeft className="h-6 w-6 text-gray-600 hover:text-gray-800" />
                 </Link>
                 <h1 className="text-3xl font-bold text-gray-900">Activo no encontrado</h1>
@@ -418,7 +418,7 @@ const saveAssetChanges = async () => {
           <div className="px-4 sm:px-6 lg:px-8">
             <div className="py-6">
               <div className="flex items-center">
-                <Link href="/admin/assets" className="mr-4">
+                <Link href="/assets" className="mr-4">
                   <ArrowLeft className="h-6 w-6 text-gray-600 hover:text-gray-800" />
                 </Link>
                 <h1 className="text-3xl font-bold text-gray-900">Cargando Activo...</h1>
@@ -448,7 +448,7 @@ const saveAssetChanges = async () => {
           <div className="py-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex items-center">
-                <Link href="/admin/assets" className="mr-4 p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                <Link href="/assets" className="mr-4 p-2 hover:bg-gray-100 rounded-lg transition-colors">
                   <ArrowLeft className="h-6 w-6 text-gray-600" />
                 </Link>
                 <div>
