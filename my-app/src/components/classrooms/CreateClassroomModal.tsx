@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, FormEvent, useEffect } from 'react';
@@ -11,13 +12,13 @@ const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
 interface CreateClassroomModalProps {
   isOpen: boolean;
   onClose: () => void;
-  schoolId: string; // Crucial for the API endpoint
+  schoolId: string; // Crucial para el endpoint de la API
   onClassroomCreated?: () => void;
 }
 
 interface ClassroomFormData {
   name: string;
-  capacity: string; // Keep as string for form input, convert on submit
+  capacity: string; // Mantener como string para el input del formulario, convertir al enviar
 }
 
 interface ApiErrorDetail {
@@ -65,7 +66,7 @@ const CreateClassroomModal: React.FC<CreateClassroomModalProps> = ({
     setGeneralError(null);
 
     if (!schoolId) {
-        setGeneralError("School ID is missing. Cannot create classroom.");
+        setGeneralError("Falta el ID de la escuela. No se puede crear el aula.");
         setIsSubmitting(false);
         return;
     }
@@ -73,19 +74,15 @@ const CreateClassroomModal: React.FC<CreateClassroomModalProps> = ({
     try {
       const capacityValue = formData.capacity === '' ? null : parseInt(formData.capacity, 10);
       if (formData.capacity !== '' && (isNaN(capacityValue!) || capacityValue! < 0) ) {
-        setErrors(prev => ({...prev, capacity: "Capacity must be a non-negative number."}));
+        setErrors(prev => ({...prev, capacity: "La capacidad debe ser un número no negativo."}));
         setIsSubmitting(false);
         return;
       }
 
       const payload: { name: string; capacity?: number | null } = { name: formData.name };
-      if (capacityValue !== null) { // Only include capacity if it's a valid number or explicitly set to null if API allows
+      if (capacityValue !== null) {
         payload.capacity = capacityValue;
-      } else if (formData.capacity === '') { // If capacity was left empty, send undefined or null based on API expectation
-        // If API defaults capacity or expects it to be omitted if not set, this is fine.
-        // If it must be null, payload.capacity = null;
       }
-
 
       await axios.post(`${API_BASE_URL}/schools/${schoolId}/classrooms/`, payload);
 
@@ -94,7 +91,7 @@ const CreateClassroomModal: React.FC<CreateClassroomModalProps> = ({
       }
       onClose();
     } catch (err: any) {
-      console.error('Failed to create classroom:', err);
+      console.error('Error al crear el aula:', err);
       if (err.response?.data?.detail) {
         const errorDetails = err.response.data.detail;
         if (Array.isArray(errorDetails)) {
@@ -103,20 +100,20 @@ const CreateClassroomModal: React.FC<CreateClassroomModalProps> = ({
             if (detail.loc && detail.loc.length > 1) {
               newErrors[detail.loc[1]] = detail.msg;
             } else {
-              setGeneralError(detail.msg || "An unknown validation error occurred.");
+              setGeneralError(detail.msg || "Ocurrió un error de validación desconocido.");
             }
           });
           setErrors(newErrors);
            if (Object.keys(newErrors).length === 0 && !generalError && errorDetails.length > 0) {
-             setGeneralError("Validation failed. Please check your input.");
+             setGeneralError("Error de validación. Por favor verifica los datos ingresados.");
           }
         } else if (typeof errorDetails === 'string') {
           setGeneralError(errorDetails);
         } else {
-          setGeneralError('An unexpected error occurred. Please try again.');
+          setGeneralError('Ocurrió un error inesperado. Por favor intenta de nuevo.');
         }
       } else {
-        setGeneralError('An unexpected server error occurred.');
+        setGeneralError('Ocurrió un error inesperado en el servidor.');
       }
     } finally {
       setIsSubmitting(false);
@@ -127,12 +124,12 @@ const CreateClassroomModal: React.FC<CreateClassroomModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Add New Classroom"
+      title="Agregar Nueva Aula"
       size="medium"
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>
-            Cancel
+            Cancelar
           </Button>
           <Button
             variant="primary"
@@ -141,48 +138,48 @@ const CreateClassroomModal: React.FC<CreateClassroomModalProps> = ({
             disabled={isSubmitting}
             form="create-classroom-form"
           >
-            {isSubmitting ? 'Adding...' : 'Add Classroom'}
+            {isSubmitting ? 'Agregando...' : 'Agregar Aula'}
           </Button>
         </>
       }
     >
-      <form id="create-classroom-form" onSubmit={handleSubmit} className="space-y-4">
+      <form id="create-classroom-form" onSubmit={handleSubmit} className="space-y-6 p-1">
         {generalError && (
-          <div className="p-3 bg-red-50 border border-accentRed rounded-radiusSmall text-sm text-accentRed">
+          <div className="p-4 bg-red-50 border border-accentRed rounded-radiusSmall text-sm text-accentRed">
             {generalError}
           </div>
         )}
-        <div>
-          <label htmlFor="name" className="block text-sm font-medium text-neutralDark mb-1">
-            Classroom Name <span className="text-accentRed">*</span>
+        <div className="space-y-2">
+          <label htmlFor="name" className="block text-sm font-medium text-neutralDark">
+            Nombre del Aula <span className="text-accentRed">*</span>
           </label>
           <Input
             id="name"
             name="name"
             value={formData.name}
             onChange={handleChange}
-            placeholder="e.g., Room 101, Science Lab"
+            placeholder="ej., Salón 101, Laboratorio de Ciencias"
             disabled={isSubmitting}
             hasError={!!errors.name}
           />
-          {errors.name && <p className="text-xs text-accentRed mt-1">{errors.name}</p>}
+          {errors.name && <p className="text-xs text-accentRed mt-1.5">{errors.name}</p>}
         </div>
 
-        <div>
-          <label htmlFor="capacity" className="block text-sm font-medium text-neutralDark mb-1">
-            Capacity
+        <div className="space-y-2">
+          <label htmlFor="capacity" className="block text-sm font-medium text-neutralDark">
+            Capacidad
           </label>
           <Input
             id="capacity"
             name="capacity"
-            type="number" // HTML5 number input
+            type="number"
             value={formData.capacity}
             onChange={handleChange}
-            placeholder="e.g., 30 (Optional)"
+            placeholder="ej., 30 (Opcional)"
             disabled={isSubmitting}
             hasError={!!errors.capacity}
           />
-          {errors.capacity && <p className="text-xs text-accentRed mt-1">{errors.capacity}</p>}
+          {errors.capacity && <p className="text-xs text-accentRed mt-1.5">{errors.capacity}</p>}
         </div>
       </form>
     </Modal>
