@@ -55,6 +55,12 @@ const ExclamationTriangleIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+const ArrowRightIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+  </svg>
+);
+
 const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
 
 // Updated Props interface for async params
@@ -196,12 +202,10 @@ const ClassroomDetailPage = ({ params }: Props) => {
     return (
       <div className="p-6 text-center">
         <p className="text-lg text-accentRed bg-red-50 p-4 rounded-md">{error}</p>
-        {classroom?.school_id && (
-             <Button variant="secondary" onClick={() => router.push(`/schools/${classroom.school_id}`)} className="mt-4">
-                <ArrowLeftIcon className="w-5 h-5 mr-2" />
-                Back to School Details
-            </Button>
-        )}
+        <Button variant="secondary" onClick={() => router.push('/admin/classrooms')} className="mt-4">
+          <ArrowLeftIcon className="w-5 h-5 mr-2" />
+          Volver a Gestión de Aulas
+        </Button>
       </div>
     );
   }
@@ -210,9 +214,9 @@ const ClassroomDetailPage = ({ params }: Props) => {
     return (
       <div className="p-6 text-center">
         <p className="text-lg text-neutralTextSecondary">Classroom data not available.</p>
-         <Button variant="secondary" onClick={() => router.back()} className="mt-4">
-            <ArrowLeftIcon className="w-5 h-5 mr-2" />
-            Go Back
+        <Button variant="secondary" onClick={() => router.push('/admin/classrooms')} className="mt-4">
+          <ArrowLeftIcon className="w-5 h-5 mr-2" />
+          Volver a Gestión de Aulas
         </Button>
       </div>
     );
@@ -221,14 +225,12 @@ const ClassroomDetailPage = ({ params }: Props) => {
   return (
     <div className="p-4 md:p-6 space-y-6">
       <div className="flex justify-start mb-6">
-        {classroom.school_id && (
-          <Link href={`/schools/${classroom.school_id}`}>
-            <Button variant="secondary">
-              <ArrowLeftIcon className="w-5 h-5 mr-2" />
-              Back to School Details
-            </Button>
-          </Link>
-        )}
+        <Link href="/admin/classrooms">
+          <Button variant="secondary">
+            <ArrowLeftIcon className="w-5 h-5 mr-2" />
+            Volver a Gestión de Aulas
+          </Button>
+        </Link>
       </div>
 
       <div className="bg-white shadow-xl rounded-radiusLarge p-6 md:p-8">
@@ -316,41 +318,65 @@ const ClassroomDetailPage = ({ params }: Props) => {
                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Valor Total
                       </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Acciones
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {inventory.assets.map((asset, index) => (
-                      <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">{asset.template_name}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">{asset.category_name || 'N/A'}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            asset.status === 'available' ? 'bg-green-100 text-green-800' :
-                            asset.status === 'in_use' ? 'bg-blue-100 text-blue-800' :
-                            asset.status === 'maintenance' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {asset.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            ${asset.value_estimate?.toLocaleString('es-AR') || 'N/A'}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-semibold text-gray-900">{asset.quantity}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-bold text-gray-900">
-                            ${asset.total_value?.toLocaleString('es-AR') || 'N/A'}
-                          </div>
-                        </td>
-                      </tr>
+                      <React.Fragment key={index}>
+                        <tr className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">{asset.template_name}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">{asset.category_name || 'N/A'}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              asset.status === 'available' ? 'bg-green-100 text-green-800' :
+                              asset.status === 'in_use' ? 'bg-blue-100 text-blue-800' :
+                              asset.status === 'maintenance' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {asset.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">
+                              ${asset.value_estimate?.toLocaleString('es-AR') || 'N/A'}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-semibold text-gray-900">{asset.quantity}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-bold text-gray-900">
+                              ${asset.total_value?.toLocaleString('es-AR') || 'N/A'}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex flex-col space-y-1">
+                              {asset.asset_ids.slice(0, 3).map((assetId) => (
+                                <Link
+                                  key={assetId}
+                                  href={`/assets/${assetId}`}
+                                  className="inline-flex items-center text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                                >
+                                  Ver detalles
+                                  <ArrowRightIcon className="w-3 h-3 ml-1" />
+                                </Link>
+                              ))}
+                              {asset.asset_ids.length > 3 && (
+                                <span className="text-xs text-gray-500 italic">
+                                  +{asset.asset_ids.length - 3} más
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
