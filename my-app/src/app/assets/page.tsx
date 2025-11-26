@@ -4,10 +4,11 @@ import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import Button from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
-import { 
-  ChevronLeft, 
-  ChevronRight, 
-  Eye, 
+import { bulkDeleteAssets, bulkUpdateAssets, printQRCodes, downloadQRCode } from '@/services/api';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Eye,
   ShieldAlert,
   Building,
   Package,
@@ -28,7 +29,10 @@ import {
   Tag,
   RefreshCw,
   FileText,
-  Settings
+  Settings,
+  Printer,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import Link from 'next/link';
 import * as XLSX from 'xlsx';
@@ -117,6 +121,13 @@ const AllAssetsAdminPage: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [assetEvents, setAssetEvents] = useState<AssetEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkOperation, setBulkOperation] = useState<'delete' | 'update' | null>(null);
+  const [bulkUpdateData, setBulkUpdateData] = useState<{
+    value_estimate?: number;
+    status?: string;
+  }>({});
 
   const [filters, setFilters] = useState<Filters>({
     search: '',
@@ -246,7 +257,7 @@ const AllAssetsAdminPage: React.FC = () => {
       const response = await axios.get(`${API_BASE_URL}/assets/`, {
         params: { skip: 0, limit: 10000, ...filters }
       });
-      
+
       const exportData = response.data.map((asset: Asset) => ({
         'ID': asset.id,
         'Nombre': asset.template.name,
@@ -268,15 +279,103 @@ const AllAssetsAdminPage: React.FC = () => {
       const worksheet = XLSX.utils.json_to_sheet(exportData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Activos');
-      
+
       const fileName = `activos_${new Date().toISOString().split('T')[0]}.xlsx`;
       XLSX.writeFile(workbook, fileName);
-      
+
     } catch (err) {
       alert('Error al exportar datos');
       console.error('Export error:', err);
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  // Handle selection
+  const toggleSelectAsset = (assetId: string) => {
+    setSelectedAssetIds(prev =>
+      prev.includes(assetId)
+        ? prev.filter(id => id !== assetId)
+        : [...prev, assetId]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedAssetIds.length === assets.length) {
+      setSelectedAssetIds([]);
+    } else {
+      setSelectedAssetIds(assets.map(a => a.id));
+    }
+  };
+
+  // Bulk operations
+  const handleBulkDelete = async () => {
+    if (selectedAssetIds.length === 0) {
+      alert('No hay activos seleccionados');
+      return;
+    }
+
+    if (!confirm(`¿Estás seguro de que quieres eliminar ${selectedAssetIds.length} activos? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+
+    try {
+      const result = await bulkDeleteAssets(selectedAssetIds);
+      alert(`Se eliminaron ${result.deleted_count} de ${result.total_requested} activos`);
+
+      if (result.errors && result.errors.length > 0) {
+        console.error('Errores al eliminar:', result.errors);
+      }
+
+      // Refresh assets
+      fetchAssets(currentPage, filters);
+      setSelectedAssetIds([]);
+      setShowBulkModal(false);
+    } catch (error: any) {
+      alert('Error al eliminar activos: ' + error.message);
+    }
+  };
+
+  const handleBulkUpdate = async () => {
+    if (selectedAssetIds.length === 0) {
+      alert('No hay activos seleccionados');
+      return;
+    }
+
+    if (Object.keys(bulkUpdateData).length === 0) {
+      alert('No hay cambios para aplicar');
+      return;
+    }
+
+    try {
+      const result = await bulkUpdateAssets(selectedAssetIds, bulkUpdateData);
+      alert(`Se actualizaron ${result.updated_count} de ${result.total_requested} activos`);
+
+      if (result.errors && result.errors.length > 0) {
+        console.error('Errores al actualizar:', result.errors);
+      }
+
+      // Refresh assets
+      fetchAssets(currentPage, filters);
+      setSelectedAssetIds([]);
+      setBulkUpdateData({});
+      setShowBulkModal(false);
+    } catch (error: any) {
+      alert('Error al actualizar activos: ' + error.message);
+    }
+  };
+
+  // Print QR codes
+  const handlePrintQRCodes = async () => {
+    if (selectedAssetIds.length === 0) {
+      alert('No hay activos seleccionados');
+      return;
+    }
+
+    try {
+      await printQRCodes(selectedAssetIds);
+    } catch (error: any) {
+      alert('Error al imprimir códigos QR: ' + error.message);
     }
   };
 
@@ -414,11 +513,19 @@ const AllAssetsAdminPage: React.FC = () => {
                   Gestión centralizada de activos del sistema
                 </p>
               </div>
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-3 flex-wrap">
                 <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium flex items-center">
                   <Package className="h-4 w-4 mr-1" />
-                  {assets.length} activos cargados
+                  {assets.length} activos
                 </div>
+
+                {selectedAssetIds.length > 0 && (
+                  <div className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm font-medium flex items-center">
+                    <CheckSquare className="h-4 w-4 mr-1" />
+                    {selectedAssetIds.length} seleccionados
+                  </div>
+                )}
+
                 <button
                   onClick={() => setShowFilters(!showFilters)}
                   className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm font-medium flex items-center hover:bg-gray-200 transition-colors"
@@ -426,6 +533,39 @@ const AllAssetsAdminPage: React.FC = () => {
                   <Filter className="h-4 w-4 mr-1" />
                   Filtros
                 </button>
+
+                {selectedAssetIds.length > 0 && (
+                  <>
+                    <button
+                      onClick={handlePrintQRCodes}
+                      className="bg-indigo-600 text-white px-3 py-1 rounded-full text-sm font-medium flex items-center hover:bg-indigo-700 transition-colors"
+                    >
+                      <Printer className="h-4 w-4 mr-1" />
+                      Imprimir QR
+                    </button>
+                    <button
+                      onClick={() => {
+                        setBulkOperation('update');
+                        setShowBulkModal(true);
+                      }}
+                      className="bg-blue-600 text-white px-3 py-1 rounded-full text-sm font-medium flex items-center hover:bg-blue-700 transition-colors"
+                    >
+                      <Edit className="h-4 w-4 mr-1" />
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => {
+                        setBulkOperation('delete');
+                        setShowBulkModal(true);
+                      }}
+                      className="bg-red-600 text-white px-3 py-1 rounded-full text-sm font-medium flex items-center hover:bg-red-700 transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Eliminar
+                    </button>
+                  </>
+                )}
+
                 <button
                   onClick={exportToExcel}
                   disabled={isExporting}
@@ -591,6 +731,18 @@ const AllAssetsAdminPage: React.FC = () => {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th scope="col" className="px-4 py-3 text-left">
+                      <button
+                        onClick={toggleSelectAll}
+                        className="text-gray-600 hover:text-gray-900 transition-colors"
+                      >
+                        {selectedAssetIds.length === assets.length ? (
+                          <CheckSquare className="h-5 w-5" />
+                        ) : (
+                          <Square className="h-5 w-5" />
+                        )}
+                      </button>
+                    </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Activo
                     </th>
@@ -617,6 +769,18 @@ const AllAssetsAdminPage: React.FC = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {assets.map((asset, index) => (
                     <tr key={asset.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <button
+                          onClick={() => toggleSelectAsset(asset.id)}
+                          className="text-gray-600 hover:text-gray-900 transition-colors"
+                        >
+                          {selectedAssetIds.includes(asset.id) ? (
+                            <CheckSquare className="h-5 w-5 text-blue-600" />
+                          ) : (
+                            <Square className="h-5 w-5" />
+                          )}
+                        </button>
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="flex-shrink-0 h-10 w-10">
@@ -949,6 +1113,174 @@ const AllAssetsAdminPage: React.FC = () => {
                   Editar Activo
                 </Link>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Operations Modal */}
+      {showBulkModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-gray-900">
+                  {bulkOperation === 'delete' ? 'Eliminar Activos' : 'Actualizar Activos'}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowBulkModal(false);
+                    setBulkOperation(null);
+                    setBulkUpdateData({});
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+
+              {bulkOperation === 'delete' ? (
+                <div>
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                    <div className="flex items-start">
+                      <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 mr-3" />
+                      <div>
+                        <h3 className="text-sm font-medium text-red-800">Advertencia</h3>
+                        <p className="text-sm text-red-700 mt-1">
+                          Estás a punto de eliminar <span className="font-bold">{selectedAssetIds.length} activos</span>.
+                          Esta acción no se puede deshacer.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
+                    {selectedAssetIds.map(id => {
+                      const asset = assets.find(a => a.id === id);
+                      return asset ? (
+                        <div key={id} className="flex items-center bg-gray-50 rounded p-2">
+                          <Package className="h-4 w-4 text-gray-400 mr-2" />
+                          <span className="text-sm text-gray-900">
+                            {asset.template.name} - {asset.serial_number}
+                          </span>
+                        </div>
+                      ) : null;
+                    })}
+                  </div>
+
+                  <div className="flex justify-end space-x-3">
+                    <button
+                      onClick={() => {
+                        setShowBulkModal(false);
+                        setBulkOperation(null);
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleBulkDelete}
+                      className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700"
+                    >
+                      <Trash2 className="h-4 w-4 inline mr-1" />
+                      Eliminar {selectedAssetIds.length} Activos
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Actualizar <span className="font-bold">{selectedAssetIds.length} activos</span> seleccionados
+                  </p>
+
+                  <div className="space-y-4 mb-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Valor Estimado
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="Dejar vacío para no modificar"
+                        value={bulkUpdateData.value_estimate ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setBulkUpdateData(prev => ({
+                            ...prev,
+                            value_estimate: value === '' ? undefined : parseFloat(value)
+                          }));
+                        }}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Estado
+                      </label>
+                      <select
+                        value={bulkUpdateData.status ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setBulkUpdateData(prev => ({
+                            ...prev,
+                            status: value === '' ? undefined : value
+                          }));
+                        }}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Dejar sin cambios</option>
+                        {statusOptions.map(status => (
+                          <option key={status.value} value={status.value}>
+                            {status.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 max-h-40 overflow-y-auto mb-4 bg-gray-50 rounded p-3">
+                    <p className="text-xs font-medium text-gray-700 mb-2">Activos a actualizar:</p>
+                    {selectedAssetIds.slice(0, 5).map(id => {
+                      const asset = assets.find(a => a.id === id);
+                      return asset ? (
+                        <div key={id} className="flex items-center">
+                          <Package className="h-3 w-3 text-gray-400 mr-2" />
+                          <span className="text-xs text-gray-700">
+                            {asset.template.name} - {asset.serial_number}
+                          </span>
+                        </div>
+                      ) : null;
+                    })}
+                    {selectedAssetIds.length > 5 && (
+                      <p className="text-xs text-gray-500 italic">
+                        y {selectedAssetIds.length - 5} más...
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end space-x-3">
+                    <button
+                      onClick={() => {
+                        setShowBulkModal(false);
+                        setBulkOperation(null);
+                        setBulkUpdateData({});
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleBulkUpdate}
+                      disabled={Object.keys(bulkUpdateData).length === 0}
+                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Edit className="h-4 w-4 inline mr-1" />
+                      Actualizar Activos
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

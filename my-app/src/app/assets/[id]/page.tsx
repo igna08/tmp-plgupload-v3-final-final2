@@ -6,9 +6,10 @@ import { useParams } from 'next/navigation'; // For getting route parameters
 import axios from 'axios';
 import Button from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
-import { 
-  ChevronLeft, 
-  Eye, 
+import { updateAssetImage, downloadQRCode as downloadQR } from '@/services/api';
+import {
+  ChevronLeft,
+  Eye,
   ShieldAlert,
   Building,
   Package,
@@ -37,7 +38,8 @@ import {
   Save,
   ArrowLeft,
   History,
-  Bug
+  Bug,
+  Upload
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -125,6 +127,9 @@ const SingleAssetPage: React.FC = () => {
   const [editForm, setEditForm] = useState<Partial<Asset>>({});
   const [isSaving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'events' | 'incidents'>('details');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   // Debug logging
   const debugLog = (message: string, data?: any) => {
@@ -219,14 +224,9 @@ const SingleAssetPage: React.FC = () => {
       debugLog('Cannot download QR code - no URL');
       return;
     }
-    
+
     debugLog('Downloading QR code', { url: asset.qr_code.qr_url });
-    const link = document.createElement('a');
-    link.href = asset.qr_code.qr_url;
-    link.download = `qr-code-${asset.serial_number}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadQR(asset.qr_code.qr_url, `qr-code-${asset.serial_number}.png`);
   };
 
   // Update asset status
@@ -292,11 +292,11 @@ const saveAssetChanges = async () => {
   // Delete asset
   const deleteAsset = async () => {
     if (!asset) return;
-    
+
     if (!confirm('¿Estás seguro de que quieres eliminar este activo? Esta acción no se puede deshacer.')) {
       return;
     }
-    
+
     try {
       debugLog('Deleting asset', { assetId: asset.id });
       await axios.delete(`${API_BASE_URL}/assets/${asset.id}`);
@@ -306,6 +306,84 @@ const saveAssetChanges = async () => {
       const errorMessage = err.response?.data?.detail || 'Error desconocido';
       debugLog('Asset deletion error', { error: err, message: errorMessage });
       alert('Error al eliminar activo: ' + errorMessage);
+    }
+  };
+
+  // Handle image file selection
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImageFile(file);
+
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Upload image to Cloudinary or similar service
+  const uploadImageToCloudinary = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', 'ml_default'); // Replace with your upload preset
+
+    try {
+      const response = await axios.post(
+        'https://api.cloudinary.com/v1_1/YOUR_CLOUD_NAME/image/upload', // Replace with your cloud name
+        formData
+      );
+      return response.data.secure_url;
+    } catch (error) {
+      throw new Error('Error al subir imagen a Cloudinary');
+    }
+  };
+
+  // Update asset image
+  const handleUpdateAssetImage = async () => {
+    if (!asset || !imageFile) return;
+
+    setIsUploadingImage(true);
+    try {
+      debugLog('Uploading image', { assetId: asset.id });
+
+      // First upload to Cloudinary
+      const imageUrl = await uploadImageToCloudinary(imageFile);
+      debugLog('Image uploaded to Cloudinary', { url: imageUrl });
+
+      // Then update asset with new image URL
+      const updatedAsset = await updateAssetImage(asset.id, imageUrl);
+      setAsset(updatedAsset);
+      setImageFile(null);
+      setImagePreview(null);
+      alert('Imagen actualizada exitosamente');
+      debugLog('Asset image updated successfully');
+    } catch (err: any) {
+      debugLog('Image update error', { error: err });
+      alert('Error al actualizar imagen: ' + err.message);
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  // Update asset image with URL directly
+  const handleUpdateImageURL = async (imageUrl: string) => {
+    if (!asset || !imageUrl) return;
+
+    setIsUploadingImage(true);
+    try {
+      debugLog('Updating image URL', { assetId: asset.id, url: imageUrl });
+      const updatedAsset = await updateAssetImage(asset.id, imageUrl);
+      setAsset(updatedAsset);
+      alert('Imagen actualizada exitosamente');
+      debugLog('Asset image updated successfully');
+    } catch (err: any) {
+      debugLog('Image update error', { error: err });
+      alert('Error al actualizar imagen: ' + err.message);
+    } finally {
+      setIsUploadingImage(false);
     }
   };
 
@@ -756,7 +834,13 @@ const saveAssetChanges = async () => {
               <div className="bg-white shadow rounded-lg p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Imagen del Activo</h3>
                 <div className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
-                  {asset.image_url ? (
+                  {imagePreview ? (
+                    <img
+                      src={imagePreview}
+                      alt="Preview"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : asset.image_url ? (
                     <img
                       src={asset.image_url}
                       alt={asset.template.name}
@@ -767,24 +851,97 @@ const saveAssetChanges = async () => {
                       }}
                     />
                   ) : null}
-                  <div className={`text-center ${asset.image_url ? 'hidden' : ''}`}>
+                  <div className={`text-center ${(imagePreview || asset.image_url) ? 'hidden' : ''}`}>
                     <ImageIcon className="h-16 w-16 text-gray-400 mx-auto mb-2" />
                     <p className="text-sm text-gray-500">No hay imagen disponible</p>
                   </div>
                 </div>
-{/* SECCIÓN COMENTADA - Edición de imagen deshabilitada temporalmente */}
-{/* {isEditing && (
-  <div className="mt-3">
-    <label className="block text-sm font-medium text-gray-700 mb-1">URL de Imagen</label>
-    <input
-      type="url"
-      value={editForm.image_url || ''}
-      onChange={(e) => setEditForm(prev => ({ ...prev, image_url: e.target.value }))}
-      placeholder="https://ejemplo.com/imagen.jpg"
-      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-    />
-  </div>
-)} */}
+
+                {/* Image Upload Section */}
+                <div className="mt-4 space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Cargar desde archivo
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageFileChange}
+                      className="block w-full text-sm text-gray-500
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-md file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-blue-50 file:text-blue-700
+                        hover:file:bg-blue-100
+                        cursor-pointer"
+                    />
+                    {imageFile && (
+                      <div className="mt-2 flex items-center space-x-2">
+                        <button
+                          onClick={handleUpdateAssetImage}
+                          disabled={isUploadingImage}
+                          className="flex-1 bg-green-600 text-white px-3 py-2 rounded text-sm hover:bg-green-700 disabled:opacity-50 flex items-center justify-center"
+                        >
+                          {isUploadingImage ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                              Subiendo...
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="h-4 w-4 mr-1" />
+                              Subir imagen
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setImageFile(null);
+                            setImagePreview(null);
+                          }}
+                          className="bg-gray-600 text-white px-3 py-2 rounded text-sm hover:bg-gray-700"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="border-t pt-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      O ingresar URL de imagen
+                    </label>
+                    <div className="flex space-x-2">
+                      <input
+                        type="url"
+                        placeholder="https://ejemplo.com/imagen.jpg"
+                        className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            const input = e.currentTarget as HTMLInputElement;
+                            handleUpdateImageURL(input.value);
+                            input.value = '';
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={(e) => {
+                          const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                          handleUpdateImageURL(input.value);
+                          input.value = '';
+                        }}
+                        disabled={isUploadingImage}
+                        className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {isUploadingImage ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          'Actualizar'
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* QR Code */}

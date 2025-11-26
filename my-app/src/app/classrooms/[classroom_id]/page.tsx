@@ -8,6 +8,7 @@ import Modal from '@/components/ui/Modal'; // Import base Modal for confirmation
 import Link from 'next/link'; // For linking back to school
 import EditClassroomModal from '@/components/classrooms/EditClassroomModal'; // Import the modal
 import { FC } from "react";
+import { getClassroomInventory, ClassroomInventory } from '@/services/api';
 
 // Define the Classroom interface (reuse or define if not globally available)
 interface Classroom {
@@ -72,6 +73,9 @@ const ClassroomDetailPage = ({ params }: Props) => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false); // State for edit modal
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false); // State for delete modal
   const [isDeleting, setIsDeleting] = useState(false); // Loading state for delete operation
+  const [inventory, setInventory] = useState<ClassroomInventory | null>(null);
+  const [isLoadingInventory, setIsLoadingInventory] = useState(false);
+  const [inventoryError, setInventoryError] = useState<string | null>(null);
 
   // Resolve params on mount
   useEffect(() => {
@@ -122,11 +126,28 @@ const ClassroomDetailPage = ({ params }: Props) => {
     }
   }, []);
 
+  const fetchInventory = useCallback(async (id: string) => {
+    if (!id) return;
+
+    setIsLoadingInventory(true);
+    setInventoryError(null);
+    try {
+      const inventoryData = await getClassroomInventory(id);
+      setInventory(inventoryData);
+    } catch (err: any) {
+      console.error("Failed to fetch classroom inventory:", err);
+      setInventoryError(err.message || 'Failed to load inventory');
+    } finally {
+      setIsLoadingInventory(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (classroom_id) {
       fetchClassroomDetails(classroom_id);
+      fetchInventory(classroom_id);
     }
-  }, [classroom_id, fetchClassroomDetails]); // fetchClassroomDetails is stable due to useCallback
+  }, [classroom_id, fetchClassroomDetails, fetchInventory]); // fetchClassroomDetails is stable due to useCallback
 
   const openEditModal = () => setIsEditModalOpen(true);
   const closeEditModal = () => setIsEditModalOpen(false);
@@ -242,8 +263,105 @@ const ClassroomDetailPage = ({ params }: Props) => {
           </div>
         </div>
 
-        {/* Placeholder for other classroom-specific details if any */}
-        {/* e.g., list of students, schedule, etc. */}
+        {/* Classroom Inventory Section */}
+        <div className="mt-8 pt-6 border-t border-neutralLight">
+          <h2 className="text-2xl font-bold text-neutralDarker mb-4">Inventario del Aula</h2>
+
+          {isLoadingInventory ? (
+            <div className="text-center py-8">
+              <p className="text-neutralTextSecondary">Cargando inventario...</p>
+            </div>
+          ) : inventoryError ? (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-sm text-red-700">{inventoryError}</p>
+            </div>
+          ) : inventory && inventory.assets.length > 0 ? (
+            <div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <p className="text-sm font-medium text-blue-900">Total de Activos</p>
+                  <p className="text-2xl font-bold text-blue-700">{inventory.total_assets}</p>
+                </div>
+                <div className="bg-green-50 rounded-lg p-4">
+                  <p className="text-sm font-medium text-green-900">Valor Total</p>
+                  <p className="text-2xl font-bold text-green-700">
+                    ${inventory.total_value.toLocaleString('es-AR')}
+                  </p>
+                </div>
+                <div className="bg-purple-50 rounded-lg p-4">
+                  <p className="text-sm font-medium text-purple-900">Tipos de Activos</p>
+                  <p className="text-2xl font-bold text-purple-700">{inventory.assets.length}</p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Activo
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Categoría
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Estado
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Valor Unitario
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Cantidad
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Valor Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {inventory.assets.map((asset, index) => (
+                      <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">{asset.template_name}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">{asset.category_name || 'N/A'}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                            asset.status === 'available' ? 'bg-green-100 text-green-800' :
+                            asset.status === 'in_use' ? 'bg-blue-100 text-blue-800' :
+                            asset.status === 'maintenance' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {asset.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">
+                            ${asset.value_estimate?.toLocaleString('es-AR') || 'N/A'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-semibold text-gray-900">{asset.quantity}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-bold text-gray-900">
+                            ${asset.total_value?.toLocaleString('es-AR') || 'N/A'}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 bg-gray-50 rounded-lg">
+              <p className="text-neutralTextSecondary">No hay activos en esta aula</p>
+            </div>
+          )}
+        </div>
 
         <div className="mt-8 pt-6 border-t border-neutralLight flex flex-col sm:flex-row sm:justify-end sm:space-x-3 space-y-3 sm:space-y-0">
           <Button variant="secondary" onClick={openEditModal} disabled={!classroom}>
