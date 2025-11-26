@@ -324,21 +324,16 @@ const saveAssetChanges = async () => {
     }
   };
 
-  // Upload image to Cloudinary or similar service
-  const uploadImageToCloudinary = async (file: File): Promise<string> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', 'ml_default'); // Replace with your upload preset
-
-    try {
-      const response = await axios.post(
-        'https://api.cloudinary.com/v1_1/YOUR_CLOUD_NAME/image/upload', // Replace with your cloud name
-        formData
-      );
-      return response.data.secure_url;
-    } catch (error) {
-      throw new Error('Error al subir imagen a Cloudinary');
-    }
+  // Convert image file to base64 Data URL
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        resolve(reader.result as string);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   };
 
   // Update asset image
@@ -347,14 +342,14 @@ const saveAssetChanges = async () => {
 
     setIsUploadingImage(true);
     try {
-      debugLog('Uploading image', { assetId: asset.id });
+      debugLog('Converting image to base64', { assetId: asset.id });
 
-      // First upload to Cloudinary
-      const imageUrl = await uploadImageToCloudinary(imageFile);
-      debugLog('Image uploaded to Cloudinary', { url: imageUrl });
+      // Convert file to base64 Data URL (same as camera capture)
+      const imageDataUrl = await fileToBase64(imageFile);
+      debugLog('Image converted to base64');
 
-      // Then update asset with new image URL
-      const updatedAsset = await updateAssetImage(asset.id, imageUrl);
+      // Update asset with base64 image URL
+      const updatedAsset = await updateAssetImage(asset.id, imageDataUrl);
       setAsset(updatedAsset);
       setImageFile(null);
       setImagePreview(null);
