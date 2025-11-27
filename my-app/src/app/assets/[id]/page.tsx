@@ -39,7 +39,8 @@ import {
   ArrowLeft,
   History,
   Bug,
-  Upload
+  Upload,
+  Printer
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -101,7 +102,13 @@ interface AssetIncident {
   resolved_at?: string;
 }
 
+interface BluetoothPrinter {
+  device: BluetoothDevice;
+  characteristic: BluetoothRemoteGATTCharacteristic;
+}
+
 const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
+const BASE_APP_URL = 'https://issa-qr.vercel.app';
 
 const statusOptions = [
   { value: 'available', label: 'Disponible', color: 'bg-green-100 text-green-800', icon: CheckCircle },
@@ -130,6 +137,8 @@ const SingleAssetPage: React.FC = () => {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [bluetoothPrinter, setBluetoothPrinter] = useState<BluetoothPrinter | null>(null);
+  const [isPrinting, setIsPrinting] = useState(false);
 
   // Debug logging
   const debugLog = (message: string, data?: any) => {
@@ -379,6 +388,159 @@ const saveAssetChanges = async () => {
       alert('Error al actualizar imagen: ' + err.message);
     } finally {
       setIsUploadingImage(false);
+    }
+  };
+
+  // Connect to Bluetooth printer
+  const connectBluetooth = async (): Promise<void> => {
+    try {
+      setIsPrinting(true);
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }]
+      });
+
+      if (!device.gatt) {
+        throw new Error('GATT not available');
+      }
+
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+      const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+
+      setBluetoothPrinter({ device, characteristic });
+      alert('Impresora conectada exitosamente');
+    } catch (error) {
+      alert('Error al conectar con la impresora');
+      console.error('Bluetooth error:', error);
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
+  // Generate TSPL sticker commands
+  const generateTSPLSticker = (assetData: Asset): string => {
+    const assetUrl = `${BASE_APP_URL}/assets/${assetData.id}`;
+    const aulaInfo = "AULA";
+    const itemInfo = assetData.template.name || "";
+    const assetId = `ID: ${assetData.id.substring(0, 8)}`;
+
+    // Calcular tamaño de fuente según longitud del texto
+    const getTextSize = (text: string, maxChars: number, maxSize: number): number => {
+      if (text.length <= maxChars) return maxSize;
+      if (text.length <= maxChars * 1.5) return maxSize - 1;
+      return Math.max(1, maxSize - 2);
+    };
+
+    // Función para dividir texto largo en múltiples líneas
+    const splitText = (text: string, maxCharsPerLine: number): string[] => {
+      if (text.length <= maxCharsPerLine) return [text];
+
+      const words = text.split(' ');
+      const lines: string[] = [];
+      let currentLine = '';
+
+      words.forEach(word => {
+        if ((currentLine + ' ' + word).trim().length <= maxCharsPerLine) {
+          currentLine = (currentLine + ' ' + word).trim();
+        } else {
+          if (currentLine) lines.push(currentLine);
+          currentLine = word;
+        }
+      });
+
+      if (currentLine) lines.push(currentLine);
+      return lines.slice(0, 2); // Máximo 2 líneas
+    };
+
+    // Configuración del aula
+    const aulaSize = getTextSize(aulaInfo, 12, 3);
+    const aulaLines = splitText(aulaInfo, 15);
+
+    // Configuración del nombre del item
+    const itemSize = getTextSize(itemInfo, 15, 2);
+    const itemLines = splitText(itemInfo, 20);
+
+    // Generar comandos TSPL
+    let tspl = `SIZE 50 mm,25 mm
+GAP 2 mm,0
+DIRECTION 1
+DENSITY 8
+CLS
+QRCODE 15,30,M,4,A,0,M2,S7,"${assetUrl}"
+`;
+
+    // Texto comienza en la mitad derecha
+    const textStartX = 207;
+
+    // Agregar texto del aula
+    let yPos = 25;
+    aulaLines.forEach((line, index) => {
+      tspl += `TEXT ${textStartX},${yPos + (index * 40)},"${aulaSize}",0,1,1,"${line}"\n`;
+    });
+
+    // Agregar texto del nombre
+    yPos = aulaLines.length > 1 ? 105 : 75;
+    itemLines.forEach((line, index) => {
+      tspl += `TEXT ${textStartX},${yPos + (index * 35)},"${itemSize}",0,1,1,"${line}"\n`;
+    });
+
+    // Agregar ID en la parte inferior
+    yPos = itemLines.length > 1 ? 175 : (aulaLines.length > 1 ? 155 : 140);
+    tspl += `TEXT ${textStartX},${yPos},"1",0,1,1,"${assetId}"\n`;
+
+    tspl += `PRINT 1\n`;
+
+    return tspl;
+  };
+
+  // Send TSPL commands to printer
+  const sendTSPLCommands = async (tsplString: string): Promise<void> => {
+    if (!bluetoothPrinter?.characteristic) {
+      throw new Error('Impresora Bluetooth no conectada');
+    }
+
+    const encoder = new TextEncoder();
+    const data = encoder.encode(tsplString);
+
+    const chunkSize = 512;
+    for (let i = 0; i < data.length; i += chunkSize) {
+      const chunk = data.slice(i, Math.min(i + chunkSize, data.length));
+      await bluetoothPrinter.characteristic.writeValue(chunk);
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 500));
+  };
+
+  // Print QR sticker
+  const printQRSticker = async (): Promise<void> => {
+    if (!asset) {
+      alert('No hay activo para imprimir');
+      return;
+    }
+
+    if (!bluetoothPrinter) {
+      await connectBluetooth();
+      // Wait a bit for the connection to be established
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    if (!bluetoothPrinter) {
+      return; // Connection failed
+    }
+
+    try {
+      setIsPrinting(true);
+
+      const tsplCommands = generateTSPLSticker(asset);
+      await sendTSPLCommands(tsplCommands);
+
+      alert('Etiqueta impresa correctamente');
+    } catch (error) {
+      alert(`Error al imprimir etiqueta: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+      console.error('Print error:', error);
+    } finally {
+      setIsPrinting(false);
     }
   };
 
@@ -989,6 +1151,23 @@ const saveAssetChanges = async () => {
                 
                 {asset.qr_code && (
                   <div className="mt-3 space-y-2">
+                    <button
+                      onClick={printQRSticker}
+                      disabled={isPrinting}
+                      className="w-full bg-blue-600 text-white px-3 py-2 rounded text-sm hover:bg-blue-700 flex items-center justify-center disabled:opacity-50"
+                    >
+                      {isPrinting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                          Imprimiendo...
+                        </>
+                      ) : (
+                        <>
+                          <Printer className="h-4 w-4 mr-1" />
+                          Imprimir Etiqueta
+                        </>
+                      )}
+                    </button>
                     <button
                       onClick={downloadQRCode}
                       className="w-full bg-green-600 text-white px-3 py-2 rounded text-sm hover:bg-green-700 flex items-center justify-center"
