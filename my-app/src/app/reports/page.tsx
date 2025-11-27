@@ -157,6 +157,7 @@ const ReportsPage: React.FC = () => {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Fetch schools (only for superusers)
   const fetchSchools = useCallback(async () => {
@@ -213,24 +214,79 @@ const ReportsPage: React.FC = () => {
     }
   }, [token, preset, selectedSchool, useCustomDate, startDate, endDate, user?.is_superuser]);
 
-  // Export to Excel (simple example)
-  const exportReport = async () => {
-    if (!overview) return;
+  // Export reports to PDF
+  const exportReportToPDF = async (reportType: 'assets' | 'incidents' | 'overview') => {
+    if (!token) return;
 
+    setIsExporting(true);
     try {
-      const dataStr = JSON.stringify(overview, null, 2);
-      const dataBlob = new Blob([dataStr], { type: 'application/json' });
-      const url = URL.createObjectURL(dataBlob);
+      // Build query parameters
+      const params: any = {};
+
+      if (useCustomDate && startDate && endDate) {
+        params.start_date = startDate;
+        params.end_date = endDate;
+      } else if (preset) {
+        params.preset = preset;
+      }
+
+      if (selectedSchool && user?.is_superuser) {
+        params.school_id = selectedSchool;
+      }
+
+      // Build URL with query params
+      const queryString = new URLSearchParams(params).toString();
+      const url = `${API_BASE_URL}/reports/${reportType}/export${queryString ? `?${queryString}` : ''}`;
+
+      // Fetch PDF from backend
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error al exportar: ${response.status}`);
+      }
+
+      // Get the blob
+      const blob = await response.blob();
+
+      // Create download link
+      const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url;
-      link.download = `reporte-${new Date().toISOString().split('T')[0]}.json`;
+      link.href = downloadUrl;
+
+      // Generate filename
+      const reportTypeLabel = {
+        'assets': 'activos',
+        'incidents': 'incidentes',
+        'overview': 'general'
+      }[reportType];
+
+      const date = new Date().toISOString().split('T')[0];
+      link.download = `reporte-${reportTypeLabel}-${date}.pdf`;
+
+      // Trigger download
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      alert('Error al exportar reporte');
-      console.error('Export error:', err);
+
+      // Cleanup
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+
+      alert('Reporte exportado exitosamente');
+    } catch (err: any) {
+      console.error('Error exporting report:', err);
+      alert('Error al exportar reporte: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setIsExporting(false);
     }
   };
+
+  // Export overview report (default)
+  const exportReport = () => exportReportToPDF('overview');
 
   useEffect(() => {
     if (!isAuthLoading && user && token) {
@@ -296,10 +352,20 @@ const ReportsPage: React.FC = () => {
                 {overview && (
                   <button
                     onClick={exportReport}
-                    className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center hover:bg-green-700 transition-colors"
+                    disabled={isExporting}
+                    className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Download className="h-4 w-4 mr-2" />
-                    Exportar
+                    {isExporting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Exportando...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-4 w-4 mr-2" />
+                        Exportar PDF
+                      </>
+                    )}
                   </button>
                 )}
               </div>
@@ -502,10 +568,20 @@ const ReportsPage: React.FC = () => {
 
             {/* Assets Section */}
             <div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-                <Package className="h-5 w-5 mr-2" />
-                Análisis de Activos
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+                  <Package className="h-5 w-5 mr-2" />
+                  Análisis de Activos
+                </h2>
+                <button
+                  onClick={() => exportReportToPDF('assets')}
+                  disabled={isExporting}
+                  className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center hover:bg-blue-700 transition-colors disabled:opacity-50"
+                >
+                  <Download className="h-3 w-3 mr-1" />
+                  Exportar Activos
+                </button>
+              </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Assets by Status */}
                 <div className="bg-white rounded-lg shadow p-6">
@@ -587,10 +663,20 @@ const ReportsPage: React.FC = () => {
 
             {/* Incidents Section */}
             <div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-                <AlertTriangle className="h-5 w-5 mr-2" />
-                Análisis de Incidentes
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+                  <AlertTriangle className="h-5 w-5 mr-2" />
+                  Análisis de Incidentes
+                </h2>
+                <button
+                  onClick={() => exportReportToPDF('incidents')}
+                  disabled={isExporting}
+                  className="bg-yellow-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center hover:bg-yellow-700 transition-colors disabled:opacity-50"
+                >
+                  <Download className="h-3 w-3 mr-1" />
+                  Exportar Incidentes
+                </button>
+              </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Incidents by Status */}
                 <div className="bg-white rounded-lg shadow p-6">
