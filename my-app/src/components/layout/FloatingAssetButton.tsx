@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Plus, X, Save, Printer, Download, Check, AlertCircle, Loader } from 'lucide-react';
+import { Camera, Plus, X, Save, Printer, Download, Check, AlertCircle, Loader, Upload } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 const API_BASE_URL = 'https://finalqr-1-2-27-6-25.onrender.com/api';
@@ -100,6 +100,7 @@ const AssetCreatorFAB: React.FC = () => {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (token) {
@@ -258,26 +259,60 @@ const AssetCreatorFAB: React.FC = () => {
 
     const canvas = canvasRef.current;
     const video = videoRef.current;
-    
+
     if (video.videoWidth === 0 || video.videoHeight === 0) {
       setStatus({ type: 'error', message: 'Video no está listo para capturar' });
       return;
     }
-    
+
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    
+
     ctx.drawImage(video, 0, 0);
-    
+
     const imageData = canvas.toDataURL('image/jpeg', 0.8);
     setCapturedImage(imageData);
     setCurrentStep('form');
-    
+
     cleanupCamera();
     setStatus({ type: 'success', message: 'Foto capturada exitosamente' });
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>): void => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validar que sea una imagen
+    if (!file.type.startsWith('image/')) {
+      setStatus({ type: 'error', message: 'Por favor seleccione un archivo de imagen' });
+      return;
+    }
+
+    // Validar tamaño (máximo 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setStatus({ type: 'error', message: 'La imagen es muy grande. Máximo 5MB' });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const imageData = e.target?.result as string;
+      setCapturedImage(imageData);
+      setCurrentStep('form');
+      cleanupCamera();
+      setStatus({ type: 'success', message: 'Imagen cargada exitosamente' });
+    };
+    reader.onerror = () => {
+      setStatus({ type: 'error', message: 'Error al cargar la imagen' });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const openFileSelector = (): void => {
+    fileInputRef.current?.click();
   };
 
   const handleInputChange = (field: keyof FormData, value: string): void => {
@@ -694,6 +729,13 @@ QRCODE 15,30,M,4,A,0,M2,S7,"${assetUrl}"
                       className="w-full h-64 object-cover rounded-lg bg-gray-900"
                     />
                     <canvas ref={canvasRef} className="hidden" />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
                   </div>
 
                   <div className="flex space-x-3">
@@ -709,7 +751,7 @@ QRCODE 15,30,M,4,A,0,M2,S7,"${assetUrl}"
                       )}
                       {cameraStream ? 'Cámara Activa' : 'Activar Cámara'}
                     </button>
-                    
+
                     {cameraStream && (
                       <button
                         onClick={capturePhoto}
@@ -719,6 +761,24 @@ QRCODE 15,30,M,4,A,0,M2,S7,"${assetUrl}"
                       </button>
                     )}
                   </div>
+
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-gray-300"></div>
+                    </div>
+                    <div className="relative flex justify-center text-sm">
+                      <span className="px-2 bg-white text-gray-500">o</span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={openFileSelector}
+                    disabled={isLoading}
+                    className="w-full bg-gray-700 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center hover:bg-gray-600 disabled:opacity-50"
+                  >
+                    <Upload className="w-5 h-5 mr-2" />
+                    Subir Imagen desde Dispositivo
+                  </button>
                 </div>
               )}
 
