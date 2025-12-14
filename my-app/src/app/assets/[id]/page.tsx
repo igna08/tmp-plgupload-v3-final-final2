@@ -76,6 +76,7 @@ interface Asset {
   image_url: string;
   status: 'available' | 'in_use' | 'maintenance' | 'retired';
   classroom_id: string;
+  description?: string;
   created_at: string;
   updated_at: string;
   template: AssetTemplate;
@@ -262,7 +263,7 @@ const SingleAssetPage: React.FC = () => {
 // ✅ BIEN - Enviando solo los campos permitidos
 const saveAssetChanges = async () => {
   if (!asset || !editForm) return;
-  
+
   // Preparar el payload SOLO con los campos que realmente queremos editar
   // EXCLUIMOS image_url porque no se puede editar por ahora
   const updatePayload = {
@@ -272,12 +273,13 @@ const saveAssetChanges = async () => {
     value_estimate: editForm.value_estimate || null,
     // image_url: editForm.image_url || null, // ← COMENTADO/ELIMINADO
     status: editForm.status || null,
-    classroom_id: editForm.classroom_id || null
+    classroom_id: editForm.classroom_id || null,
+    description: editForm.description || null
   };
-  
+
   console.log('=== PAYLOAD QUE SE ENVÍA ===');
   console.log(JSON.stringify(updatePayload, null, 2));
-  
+
   debugLog('Saving asset changes', { assetId: asset.id, payload: updatePayload });
   setSaving(true);
   try {
@@ -290,7 +292,7 @@ const saveAssetChanges = async () => {
     console.log('=== ERROR COMPLETO ===');
     console.log('Status:', err.response?.status);
     console.log('Error detail:', err.response?.data);
-    
+
     const errorMessage = err.response?.data?.detail || 'Error desconocido';
     debugLog('Asset update error', { error: err, message: errorMessage });
     alert('Error al actualizar activo: ' + JSON.stringify(err.response?.data, null, 2));
@@ -958,9 +960,19 @@ QRCODE 15,30,M,4,A,0,M2,S7,"${assetUrl}"
               {/* Description */}
               <div className="bg-white shadow rounded-lg p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Descripción</h3>
-                <p className="text-sm text-gray-700 bg-gray-50 px-3 py-2 rounded-md">
-                  {asset.template.description || 'Sin descripción disponible'}
-                </p>
+                {isEditing ? (
+                  <textarea
+                    value={editForm.description || ''}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, description: e.target.value }))}
+                    rows={4}
+                    placeholder="Ingresa una descripción del activo..."
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  />
+                ) : (
+                  <p className="text-sm text-gray-700 bg-gray-50 px-3 py-2 rounded-md">
+                    {asset.description || asset.template.description || 'Sin descripción disponible'}
+                  </p>
+                )}
               </div>
 
               {/* Timestamps */}
