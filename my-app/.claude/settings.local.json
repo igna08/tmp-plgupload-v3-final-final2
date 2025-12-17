@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(find:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "WebSearch",
+      "WebFetch(domain:vercel.link)",
+      "WebFetch(domain:vercel.com)",
+      "Bash(pnpm install:*)"
     ],
     "deny": [],
     "ask": []
